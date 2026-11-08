@@ -1,0 +1,15 @@
+name: 功能建议 / Feature request
+description: 提出新功能或新中间件支持
+labels: [enhancement]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 你在做什么时遇到了麻烦？现在是怎么做的？
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的功能
+    validations: { required: true }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "MidDeck",
+  "outputfilename": "MidDeck",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "YunMuZhe"
+  },
+  "info": {
+    "companyName": "MidDeck",
+    "productName": "MidDeck",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © MidDeck contributors",
+    "comments": "One deck for all your middleware"
+  }
+}

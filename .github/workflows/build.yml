@@ -1,0 +1,197 @@
+name: Build
+
+# Push to main / open a PR  -> build all platforms, packages kept as workflow artifacts (7 days)
+# Push a tag like v0.1.0     -> build all platforms and publish a GitHub Release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WAILS_VERSION: v2.17.1
+  NODE_VERSION: '20'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go vet & test
+        run: |
+          go vet ./internal/...
+          go test ./internal/...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend type-check & build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  # Runs the drivers against real servers. Every version here must be listed as
+  # "tested" in internal/compat/compat.go (the test asserts it).
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { kafka: '3.9.0', redis: '6.2', rabbit: '3.13-management', expect_kafka: '3.9', expect_redis: '6.2', expect_rabbit: '3.13' }
+          - { kafka: '4.0.0', redis: '7.4', rabbit: '4.1-management', expect_kafka: '4.0', expect_redis: '7.4', expect_rabbit: '4.1' }
+    services:
+      kafka:
+        image: apache/kafka:${{ matrix.kafka }}
+        ports: ['9092:9092']
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 10s --health-timeout 10s --health-retries 15
+      redis:
+        image: redis:${{ matrix.redis }}
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 10
+      rabbit:
+        image: rabbitmq:${{ matrix.rabbit }}
+        ports: ['5672:5672', '15672:15672']
+        options: --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s --health-timeout 10s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Integration tests
+        env:
+          MIDDECK_KAFKA: localhost:9092
+          MIDDECK_REDIS: localhost:6379
+          MIDDECK_RABBIT_MGMT: http://localhost:15672
+          MIDDECK_RABBIT_AMQP: localhost:5672
+          MIDDECK_EXPECT_KAFKA: ${{ matrix.expect_kafka }}
+          MIDDECK_EXPECT_REDIS: ${{ matrix.expect_redis }}
+          MIDDECK_EXPECT_RABBIT: ${{ matrix.expect_rabbit }}
+        run: go test -tags integration -v -count=1 ./internal/integration/
+
+  build:
+    needs: [test, integration]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin/universal
+            name: macos-universal
+          - os: windows-latest
+            platform: windows/amd64
+            name: windows-amd64
+          - os: windows-latest
+            platform: windows/arm64
+            name: windows-arm64
+          - os: ubuntu-24.04
+            platform: linux/amd64
+            name: linux-amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Ensure NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+
+      - name: Build
+        shell: bash
+        run: |
+          FLAGS=""
+          [[ "$RUNNER_OS" == "Windows" ]] && FLAGS="-nsis"
+          [[ "$RUNNER_OS" == "Linux" ]] && FLAGS="-tags webkit2_41"
+          wails build -clean -trimpath -platform ${{ matrix.platform }} $FLAGS \
+            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cd build/bin
+          ditto -c -k --keepParent MidDeck.app "../../dist/MidDeck-${{ steps.ver.outputs.version }}-${{ matrix.name }}.zip"
+          hdiutil create -volname MidDeck -srcfolder MidDeck.app -ov -format UDZO \
+            "../../dist/MidDeck-${{ steps.ver.outputs.version }}-${{ matrix.name }}.dmg"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          V=${{ steps.ver.outputs.version }}
+          cp build/bin/MidDeck.exe "dist/MidDeck-$V-${{ matrix.name }}-portable.exe"
+          cp build/bin/*installer.exe "dist/MidDeck-$V-${{ matrix.name }}-setup.exe"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          tar -C build/bin -czf "dist/MidDeck-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz" MidDeck
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MidDeck-${{ matrix.name }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

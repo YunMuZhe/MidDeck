@@ -1,0 +1,36 @@
+name: 问题反馈 / Bug report
+description: 报告一个 bug
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: MidDeck 版本
+      placeholder: v0.1.0
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options: [macOS (Apple Silicon), macOS (Intel), Windows x64, Windows ARM64, Linux]
+    validations: { required: true }
+  - type: input
+    id: middleware
+    attributes:
+      label: 中间件及版本
+      placeholder: Kafka 3.6 / Redis 7.2 cluster / RabbitMQ 3.13
+  - type: dropdown
+    id: network
+    attributes:
+      label: 网络方式
+      options: [直连, SSH 跳板, 多级 SSH 跳板, SOCKS5 代理]
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么，期望是什么
+    validations: { required: true }
+  - type: textarea
+    id: diag
+    attributes:
+      label: 诊断报告
+      description: 实例页面 → 诊断报告，截图或复制文字（请隐去敏感地址）

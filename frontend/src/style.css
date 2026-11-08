@@ -1,0 +1,17 @@
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, pre.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
+.sider-scroll { height: calc(100vh - 112px); overflow: auto; }
+.content-scroll { height: 100vh; overflow: auto; }
+.env-prod { border-top: 3px solid #e03131; }
+.cell-ellipsis { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+.console-out { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; height: 420px; overflow: auto; }
+.console-out .cmd { color: #4fc1ff; }
+.console-out .err { color: #f48771; }
