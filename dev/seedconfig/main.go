@@ -20,7 +20,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bastion := []config.SSHHop{{Host: "localhost", Port: 2222, User: "ops", AuthType: "password", Secret: "middeck"}}
+	// One shared jump host, picked by every connection that needs it.
+	jumpID := ""
+	for _, b := range store.ListBastions() {
+		if b.Name == "Playground bastion" {
+			jumpID = b.ID
+		}
+	}
+	jump, err := store.SaveBastion(config.Bastion{
+		ID: jumpID, Name: "Playground bastion", Description: "dev/docker-compose.yml jump service",
+		SSHHop: config.SSHHop{Host: "localhost", Port: 2222, User: "ops", AuthType: "password", Secret: "middeck"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("saved jump host %-12s %s\n", jump.Name, jump.ID)
+	bastion := []config.SSHHop{{BastionID: jump.ID}}
 
 	want := []config.Instance{
 		{

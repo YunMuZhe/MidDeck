@@ -4,7 +4,7 @@ import { DeleteOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from '@a
 import { api, errMsg } from '../api'
 import { fmtBytes, fmtTime, num, prettyJSON, Tiles, useDangerConfirm } from '../common'
 import { useT } from '../settings'
-import type { Instance, KeyItem, KeyValue, SlowLog } from '../types'
+import type { Intent, Instance, KeyItem, KeyValue, SlowLog } from '../types'
 
 const typeColor: Record<string, string> = { string: 'blue', hash: 'purple', list: 'green', set: 'orange', zset: 'magenta', stream: 'cyan' }
 
@@ -13,8 +13,31 @@ const keyCount = (info: Record<string, string>) =>
     .filter(([k]) => /^db\d+$/.test(k))
     .reduce((s, [, v]) => s + Number(/keys=(\d+)/.exec(v)?.[1] ?? 0), 0)
 
-export default function RedisView({ inst }: { inst: Instance }) {
+export default function RedisView({ inst, intent, onIntentDone }: { inst: Instance; intent?: Intent; onIntentDone: () => void }) {
   const t = useT()
+  const [tab, setTab] = useState('keys')
+  const [pattern, setPattern] = useState<{ v: string; seq: number }>()
+  const [command, setCommand] = useState<{ v: string; seq: number }>()
+
+  // Proposals from the AI assistant: fill in the pattern or command, never run it.
+  useEffect(() => {
+    if (!intent) return
+    const a = intent.args
+    switch (intent.action) {
+      case 'open_instance':
+        if (['keys', 'console', 'info'].includes(a.tab)) setTab(a.tab)
+        break
+      case 'redis_scan':
+        setTab('keys')
+        setPattern({ v: a.pattern ?? '*', seq: intent.seq })
+        break
+      case 'redis_command':
+        setTab('console')
+        setCommand({ v: a.command ?? '', seq: intent.seq })
+        break
+    }
+    onIntentDone()
+  }, [intent, onIntentDone])
   const [info, setInfo] = useState<Record<string, string> | null>(null)
   const loadInfo = useCallback(() => {
     api.redisOverview(inst.id).then(setInfo).catch(() => {})
@@ -37,9 +60,11 @@ export default function RedisView({ inst }: { inst: Instance }) {
         ]}
       />
       <Tabs
+        activeKey={tab}
+        onChange={setTab}
         items={[
-          { key: 'keys', label: t('Keys'), children: <KeysTab inst={inst} onChanged={loadInfo} /> },
-          { key: 'console', label: t('Console'), children: <ConsoleTab inst={inst} /> },
+          { key: 'keys', label: t('Keys'), children: <KeysTab inst={inst} onChanged={loadInfo} prefill={pattern} /> },
+          { key: 'console', label: t('Console'), children: <ConsoleTab inst={inst} prefill={command} /> },
           { key: 'info', label: t('Server info'), children: <InfoTab inst={inst} info={info} onRefresh={loadInfo} /> },
         ]}
       />
@@ -47,10 +72,10 @@ export default function RedisView({ inst }: { inst: Instance }) {
   )
 }
 
-function KeysTab({ inst, onChanged }: { inst: Instance; onChanged: () => void }) {
+function KeysTab({ inst, onChanged, prefill }: { inst: Instance; onChanged: () => void; prefill?: { v: string; seq: number } }) {
   const { message } = App.useApp()
   const t = useT()
-  const [pattern, setPattern] = useState('*')
+  const [pattern, setPattern] = useState(prefill?.v ?? '*')
   const [keys, setKeys] = useState<KeyItem[]>([])
   const [cursor, setCursor] = useState(0)
   const [done, setDone] = useState(true)
@@ -58,6 +83,15 @@ function KeysTab({ inst, onChanged }: { inst: Instance; onChanged: () => void })
   const [sel, setSel] = useState<string[]>([])
   const [current, setCurrent] = useState<KeyValue | null>(null)
   const confirm = useDangerConfirm(inst)
+
+  // A pattern from the assistant replaces the box and clears stale results; SCAN runs it.
+  useEffect(() => {
+    if (!prefill) return
+    setPattern(prefill.v)
+    setKeys([])
+    setDone(true)
+    setCurrent(null)
+  }, [prefill])
 
   const scan = useCallback(async (more = false) => {
     setLoading(true)
@@ -209,11 +243,14 @@ function ValuePane({ inst, v, onReload, onDelete }: { inst: Instance; v: KeyValu
 
 interface Line { kind: 'cmd' | 'out' | 'err'; text: string }
 
-function ConsoleTab({ inst }: { inst: Instance }) {
+function ConsoleTab({ inst, prefill }: { inst: Instance; prefill?: { v: string; seq: number } }) {
   const { modal } = App.useApp()
   const t = useT()
   const [lines, setLines] = useState<Line[]>([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(prefill?.v ?? '')
+  useEffect(() => {
+    if (prefill) setInput(prefill.v)
+  }, [prefill])
   const [history, setHistory] = useState<string[]>([])
   const [hIdx, setHIdx] = useState(-1)
   const outRef = useRef<HTMLDivElement>(null)

@@ -1,7 +1,7 @@
 // Thin wrapper over the Wails bindings (window.go.main.App.*), typed by hand so the
 // frontend type-checks without the generated wailsjs directory.
 import type {
-  AuditEntry, Binding, ConnectResult, Exchange, FetchReq, GroupDetail, GroupSummary, ImportResult, Instance,
+  AIAction, AISettings, AuditEntry, Bastion, BastionView, Binding, ConnectResult, Exchange, FetchReq, GroupDetail, GroupSummary, ImportResult, Instance,
   KeyValue, Matrix, Message, OffsetChange, PeekedMessage, Queue, Report, ScanResult, SlowLog, Topic, TopicDetail,
 } from './types'
 
@@ -26,6 +26,15 @@ export const api = {
   deleteInstance: (id: string) => call<void>('DeleteInstance', id),
   exportInstances: (ids: string[], passphrase: string) => call<string>('ExportInstances', ids, passphrase),
   importInstances: (passphrase: string, policy: string) => call<ImportResult>('ImportInstances', passphrase, policy),
+  listBastions: () => call<BastionView[] | null>('ListBastions').then((x) => x ?? []),
+  saveBastion: (b: Bastion) => call<Bastion>('SaveBastion', b),
+  deleteBastion: (id: string) => call<void>('DeleteBastion', id),
+  testBastion: (b: Bastion) => call<Report>('TestBastion', b),
+  mcpInfo: () => call<{ command: string; args: string[] }>('MCPInfo'),
+  getAISettings: () => call<AISettings>('GetAISettings'),
+  saveAISettings: (s: AISettings) => call<void>('SaveAISettings', s),
+  testAI: (s: AISettings) => call<string>('TestAI', s),
+  askAI: (prompt: string, current: string) => call<AIAction>('AskAI', prompt, current),
   testConnection: (i: Instance) => call<Report>('TestConnection', i),
   connect: (id: string) => call<ConnectResult>('Connect', id),
   disconnect: (id: string) => call<void>('Disconnect', id),

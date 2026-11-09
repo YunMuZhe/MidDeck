@@ -1,6 +1,7 @@
 export type Kind = 'kafka' | 'redis' | 'rabbitmq'
 
 export interface SSHHop {
+  bastionId?: string
   host: string
   port: number
   user: string
@@ -8,6 +9,9 @@ export interface SSHHop {
   keyPath?: string
   secret?: string
 }
+
+export interface Bastion extends SSHHop { id: string; name: string; description?: string }
+export interface BastionView extends Bastion { hasSecret: boolean; usedBy: string[] | null }
 
 export interface Instance {
   id: string
@@ -113,3 +117,20 @@ export const emptyInstance = (kind: Kind = 'kafka'): Instance => ({
   tls: { enabled: false, insecureSkipVerify: false },
   network: { proxy: { type: '', addr: '' }, ssh: [], addrMap: {} },
 })
+
+// AI assistant
+export interface AISettings {
+  enabled: boolean
+  provider: 'anthropic' | 'openai'
+  baseUrl: string
+  model: string
+  apiKey?: string
+  proxy?: string
+  sendAddresses: boolean
+  hasKey: boolean
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ActionArgs = Record<string, any>
+export interface AIAction { action: string; args: ActionArgs | null; text?: string }
+/** A proposed action handed to a view to prefill; seq changes for every new proposal. */
+export interface Intent { seq: number; action: string; args: ActionArgs }

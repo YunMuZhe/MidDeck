@@ -25,9 +25,17 @@ type Bundle struct {
 	ExportedAt time.Time  `json:"exportedAt"`
 	Encrypted  bool       `json:"encrypted"`
 	Instances  []Instance `json:"instances,omitempty"`
-	Salt       []byte     `json:"salt,omitempty"`
-	Nonce      []byte     `json:"nonce,omitempty"`
-	Ciphertext []byte     `json:"ciphertext,omitempty"`
+	// Bastions referenced by the exported instances (version 2+).
+	Bastions   []Bastion `json:"bastions,omitempty"`
+	Salt       []byte    `json:"salt,omitempty"`
+	Nonce      []byte    `json:"nonce,omitempty"`
+	Ciphertext []byte    `json:"ciphertext,omitempty"`
+}
+
+// payload is the encrypted part of a version 2 bundle. Version 1 encrypted a bare []Instance.
+type payload struct {
+	Instances []Instance `json:"instances"`
+	Bastions  []Bastion  `json:"bastions,omitempty"`
 }
 
 // ConflictPolicy decides what happens when an imported instance's ID already exists.
@@ -61,14 +69,33 @@ func (s *Store) Export(ids []string, passphrase string) ([]byte, error) {
 		}
 		list = append(list, in)
 	}
-	b := Bundle{Format: "middeck-bundle", Version: 1, ExportedAt: time.Now().UTC()}
+	var bastions []Bastion
+	seen := map[string]bool{}
+	for _, in := range list {
+		for _, h := range in.Network.SSH {
+			if h.BastionID == "" || seen[h.BastionID] {
+				continue
+			}
+			seen[h.BastionID] = true
+			bs, err := s.GetBastion(h.BastionID)
+			if err != nil {
+				return nil, err
+			}
+			bastions = append(bastions, bs)
+		}
+	}
+	b := Bundle{Format: "middeck-bundle", Version: 2, ExportedAt: time.Now().UTC()}
 	if passphrase == "" {
 		for _, in := range list {
 			b.Instances = append(b.Instances, stripSecrets(in))
 		}
+		for _, bs := range bastions {
+			bs.Secret = ""
+			b.Bastions = append(b.Bastions, bs)
+		}
 		return json.MarshalIndent(b, "", "  ")
 	}
-	plain, err := json.Marshal(list)
+	plain, err := json.Marshal(payload{Instances: list, Bastions: bastions})
 	if err != nil {
 		return nil, err
 	}
@@ -89,42 +116,60 @@ func (s *Store) Export(ids []string, passphrase string) ([]byte, error) {
 	return json.MarshalIndent(b, "", "  ")
 }
 
-// DecodeBundle parses a bundle and returns its instances (decrypting if needed).
-func DecodeBundle(data []byte, passphrase string) ([]Instance, error) {
+// DecodeBundle parses a bundle and returns its instances and bastions (decrypting if needed).
+func DecodeBundle(data []byte, passphrase string) ([]Instance, []Bastion, error) {
 	var b Bundle
 	if err := json.Unmarshal(data, &b); err != nil {
-		return nil, fmt.Errorf("%s: %w", i18n.T("share.notBundle"), err)
+		return nil, nil, fmt.Errorf("%s: %w", i18n.T("share.notBundle"), err)
 	}
 	if b.Format != "middeck-bundle" {
-		return nil, errors.New(i18n.T("share.notBundle"))
+		return nil, nil, errors.New(i18n.T("share.notBundle"))
 	}
 	if !b.Encrypted {
-		return b.Instances, nil
+		return b.Instances, b.Bastions, nil
 	}
 	if passphrase == "" {
-		return nil, errors.New(i18n.T("share.needPass"))
+		return nil, nil, errors.New(i18n.T("share.needPass"))
 	}
 	gcm, err := newGCM(passphrase, b.Salt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	plain, err := gcm.Open(nil, b.Nonce, b.Ciphertext, []byte(b.Format))
 	if err != nil {
-		return nil, errors.New(i18n.T("share.wrongPass"))
+		return nil, nil, errors.New(i18n.T("share.wrongPass"))
 	}
-	var list []Instance
-	if err := json.Unmarshal(plain, &list); err != nil {
-		return nil, err
+	if b.Version < 2 {
+		var list []Instance
+		err := json.Unmarshal(plain, &list)
+		return list, nil, err
 	}
-	return list, nil
+	var p payload
+	if err := json.Unmarshal(plain, &p); err != nil {
+		return nil, nil, err
+	}
+	return p.Instances, p.Bastions, nil
 }
 
 // Import adds bundle instances to the store.
 func (s *Store) Import(data []byte, passphrase string, policy ConflictPolicy) (ImportResult, error) {
 	var res ImportResult
-	list, err := DecodeBundle(data, passphrase)
+	list, bastions, err := DecodeBundle(data, passphrase)
 	if err != nil {
 		return res, err
+	}
+	// Shared jump hosts first so instances can reference them. Existing ones are kept
+	// unless the user chose to overwrite.
+	for _, bs := range bastions {
+		if _, err := s.GetBastion(bs.ID); err == nil && policy != ConflictOverwrite {
+			continue
+		}
+		s.mu.Lock()
+		delete(s.bastions, bs.ID) // so an empty secret isn't merged with a stale one
+		s.mu.Unlock()
+		if _, err := s.SaveBastion(bs); err != nil {
+			return res, err
+		}
 	}
 	for _, in := range list {
 		_, err := s.Get(in.ID)

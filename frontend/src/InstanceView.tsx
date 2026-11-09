@@ -10,16 +10,18 @@ import RedisView from './redis/RedisView'
 import RabbitView from './rabbitmq/RabbitView'
 import { useT } from './settings'
 import { kindLabel } from './theme'
-import type { ConnectResult, Instance, Report } from './types'
+import type { ConnectResult, Instance, Intent, Report } from './types'
 
 interface Props {
   inst: Instance
   onEdit: () => void
   onDeleted: () => void
   onConnected: (on: boolean) => void
+  intent?: Intent
+  onIntentDone: () => void
 }
 
-export default function InstanceView({ inst, onEdit, onDeleted, onConnected }: Props) {
+export default function InstanceView({ inst, onEdit, onDeleted, onConnected, intent, onIntentDone }: Props) {
   const { message } = App.useApp()
   const t = useT()
   const [state, setState] = useState<'connecting' | 'ok' | 'fail'>('connecting')
@@ -69,6 +71,12 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected }: P
   const compat = conn?.info.compat
   const warnCompat = compat && ['partial', 'unsupported', 'unknown'].includes(compat.level)
   const hops = inst.network?.ssh?.length ?? 0
+  const [bastionNames, setBastionNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (inst.network?.ssh?.some((h) => h.bastionId)) {
+      api.listBastions().then((l) => setBastionNames(Object.fromEntries(l.map((b) => [b.id, b.name])))).catch(() => {})
+    }
+  }, [inst])
 
   return (
     <div style={{ minHeight: '100%' }}>
@@ -109,7 +117,7 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected }: P
           <span className="mono selectable">{(inst.addrs ?? []).join(', ') || inst.mgmtUrl}</span>
           {hops > 0 && (
             <span>
-              <ApiOutlined /> {t('via {n} SSH hop(s)', { n: hops })}: {inst.network.ssh.map((h) => h.host).join(' → ')}
+              <ApiOutlined /> {t('via {n} SSH hop(s)', { n: hops })}: {inst.network.ssh.map((h) => (h.bastionId ? bastionNames[h.bastionId] ?? '?' : h.host)).join(' → ')}
             </span>
           )}
         </div>
@@ -149,9 +157,9 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected }: P
             }
           />
         )}
-        {state === 'ok' && inst.kind === 'kafka' && <KafkaView inst={inst} />}
-        {state === 'ok' && inst.kind === 'redis' && <RedisView inst={inst} />}
-        {state === 'ok' && inst.kind === 'rabbitmq' && <RabbitView inst={inst} />}
+        {state === 'ok' && inst.kind === 'kafka' && <KafkaView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
+        {state === 'ok' && inst.kind === 'redis' && <RedisView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
+        {state === 'ok' && inst.kind === 'rabbitmq' && <RabbitView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
       </div>
 
       <Drawer

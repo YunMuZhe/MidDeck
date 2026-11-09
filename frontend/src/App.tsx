@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Dropdown, Input, Segmented, Tooltip } from 'antd'
 import {
-  AuditOutlined, CaretDownOutlined, CaretRightOutlined, ExportOutlined, ImportOutlined, InfoCircleOutlined,
-  PlusOutlined, SearchOutlined, SettingOutlined,
+  ApiOutlined, AuditOutlined, CaretDownOutlined, CaretRightOutlined, CloudServerOutlined, ExportOutlined, ImportOutlined, InfoCircleOutlined,
+  PlusOutlined, RobotOutlined, SearchOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import logo from './assets/logo.png'
 import { api, errMsg } from './api'
@@ -10,9 +10,11 @@ import { EnvTag, KindIcon } from './common'
 import InstanceForm from './InstanceForm'
 import InstanceView from './InstanceView'
 import Home from './Home'
-import { AboutModal, AuditModal, ExportModal, ImportModal } from './Dialogs'
+import { AboutModal, AuditModal, ExportModal, ImportModal, MCPModal } from './Dialogs'
+import { BastionsModal } from './Bastions'
+import { AISettingsModal, AssistantModal } from './Assistant'
 import { useSettings } from './settings'
-import type { Instance } from './types'
+import { emptyInstance, type AIAction, type Instance, type Intent, type Kind, type SSHHop } from './types'
 
 const envOrder: Record<string, number> = { prod: 0, production: 0, staging: 1, test: 2, dev: 3 }
 
@@ -24,7 +26,21 @@ function matches(i: Instance, q: string) {
   return q.toLowerCase().split(/\s+/).every((t) => hay.includes(t))
 }
 
-type DialogName = 'import' | 'export' | 'audit' | 'about' | null
+type DialogName = 'import' | 'export' | 'audit' | 'about' | 'bastions' | 'assistant' | 'aiSettings' | 'mcp' | null
+
+const isMac = navigator.platform.toUpperCase().includes('MAC')
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function instanceFromArgs(a: Record<string, any>): Instance {
+  const i = emptyInstance((a.kind as Kind) || 'kafka')
+  return {
+    ...i,
+    name: a.name ?? '', project: a.project ?? '', env: a.env ?? i.env, addrs: a.addrs ?? [], aliases: a.aliases ?? [], description: a.description ?? '',
+    redisMode: a.redis_mode ?? i.redisMode, redisDb: a.redis_db ?? i.redisDb, mgmtUrl: a.mgmt_url ?? '', vhost: a.vhost ?? i.vhost,
+    auth: { ...i.auth, username: a.username ?? '' },
+    network: { ...i.network, ssh: a.bastion_id ? [{ bastionId: a.bastion_id } as SSHHop] : [] },
+  }
+}
 
 export default function App() {
   const { message } = AntApp.useApp()
@@ -38,6 +54,33 @@ export default function App() {
   const [formOpen, setFormOpen] = useState(false)
   const [dialog, setDialog] = useState<DialogName>(null)
   const [version, setVersion] = useState('')
+  const [intent, setIntent] = useState<Intent | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setDialog('assistant')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const applyAction = (a: AIAction) => {
+    const args = a.args ?? {}
+    setDialog(null)
+    if (a.action === 'new_connection') {
+      setEditing(instanceFromArgs(args))
+      setFormOpen(true)
+      return
+    }
+    if (args.instance_id) {
+      setSelected(args.instance_id)
+      setIntent({ seq: Date.now(), action: a.action, args })
+    }
+  }
 
   const reload = useCallback(async () => {
     try {
@@ -111,6 +154,10 @@ export default function App() {
         onChange={(v) => setThemeMode(v as 'light' | 'dark' | 'system')}
         options={[{ value: 'light', label: t('Light') }, { value: 'dark', label: t('Dark') }, { value: 'system', label: t('System') }]}
       />
+      <div style={{ borderTop: '1px solid var(--md-border)', margin: '12px -12px 0', padding: '8px 4px 0' }}>
+        <Button type="text" block icon={<RobotOutlined />} style={{ textAlign: 'left' }} onClick={() => { setSettingsOpen(false); setDialog('aiSettings') }}>{t('AI settings')}</Button>
+        <Button type="text" block icon={<ApiOutlined />} style={{ textAlign: 'left' }} onClick={() => { setSettingsOpen(false); setDialog('mcp') }}>{t('Use in Claude Code / Cursor (MCP)')}</Button>
+      </div>
     </div>
   )
 
@@ -131,6 +178,9 @@ export default function App() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            <Tooltip title={`${t('Ask AI')} (${isMac ? '⌘' : 'Ctrl+'}K)`}>
+              <Button icon={<RobotOutlined />} onClick={() => setDialog('assistant')} />
+            </Tooltip>
             <Tooltip title={t('New connection')}>
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor(null)} />
             </Tooltip>
@@ -160,10 +210,11 @@ export default function App() {
         <div className="sider-foot">
           <Tooltip title={t('Import')}><Button type="text" icon={<ImportOutlined />} onClick={() => setDialog('import')} /></Tooltip>
           <Tooltip title={t('Export')}><Button type="text" icon={<ExportOutlined />} onClick={() => setDialog('export')} disabled={!instances.length} /></Tooltip>
+          <Tooltip title={t('Jump hosts')}><Button type="text" icon={<CloudServerOutlined />} onClick={() => setDialog('bastions')} /></Tooltip>
           <Tooltip title={t('Audit log')}><Button type="text" icon={<AuditOutlined />} onClick={() => setDialog('audit')} /></Tooltip>
           <Tooltip title={t('Version support & about')}><Button type="text" icon={<InfoCircleOutlined />} onClick={() => setDialog('about')} /></Tooltip>
           <div style={{ flex: 1 }} />
-          <Dropdown dropdownRender={() => settingsMenu} trigger={['click']} placement="topRight">
+          <Dropdown dropdownRender={() => settingsMenu} trigger={['click']} placement="topRight" open={settingsOpen} onOpenChange={setSettingsOpen}>
             <Button type="text" icon={<SettingOutlined />}>{lang === 'zh' ? '中文' : 'EN'}</Button>
           </Dropdown>
         </div>
@@ -176,6 +227,8 @@ export default function App() {
             inst={current}
             onEdit={() => openEditor(current)}
             onConnected={(on) => markConnected(current.id, on)}
+            intent={intent?.args.instance_id === current.id ? intent : undefined}
+            onIntentDone={() => setIntent(null)}
             onDeleted={() => {
               setSelected(null)
               reload()
@@ -206,6 +259,17 @@ export default function App() {
       <ImportModal open={dialog === 'import'} onClose={() => setDialog(null)} onDone={reload} />
       <ExportModal open={dialog === 'export'} instances={instances} onClose={() => setDialog(null)} />
       <AuditModal open={dialog === 'audit'} onClose={() => setDialog(null)} />
+      <AssistantModal
+        open={dialog === 'assistant'}
+        instances={instances}
+        current={selected}
+        onClose={() => setDialog(null)}
+        onApply={applyAction}
+        onSettings={() => setDialog('aiSettings')}
+      />
+      <AISettingsModal open={dialog === 'aiSettings'} onClose={() => setDialog('assistant')} />
+      <MCPModal open={dialog === 'mcp'} onClose={() => setDialog(null)} />
+      <BastionsModal open={dialog === 'bastions'} onClose={() => setDialog(null)} />
       <AboutModal open={dialog === 'about'} version={version} onClose={() => setDialog(null)} />
     </div>
   )

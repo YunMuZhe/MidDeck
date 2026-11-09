@@ -29,6 +29,11 @@ go run ./dev/seedconfig       # 把对应的连接配置加进 MidDeck
 
 界面默认英文，支持中文。前端文案统一写成 `t('English text')`，中文翻译放在 `frontend/src/zh.ts`；后端文案（诊断步骤、提示、兼容性说明）在 `internal/i18n/i18n.go`。提交前运行 `npm run i18n:check`（CI 也会检查），确保没有漏翻的文案。
 
+## AI 助手与 MCP
+
+- AI 助手的动作目录在 `internal/ai/actions.go`，前端在 `frontend/src/Assistant.tsx` 展示，各视图通过 `intent` 属性接收并**只预填表单**。新增动作时两边一起改，绝不在收到动作后直接执行写操作。
+- MCP 工具在 `mcp.go`，协议实现在 `internal/mcp`。只暴露只读能力；本地调试：`go build -tags desktop,production -o /tmp/middeck . && /tmp/middeck mcp`（macOS 需 `CGO_LDFLAGS="-framework UniformTypeIdentifiers"`）。
+
 ## 新增一种中间件
 
 1. 在 `internal/driver/<name>/` 下实现 `Open(ctx, inst, dial, report)`。所有网络连接必须使用传入的 `dial`，这样 SSH 跳板和代理才能生效。

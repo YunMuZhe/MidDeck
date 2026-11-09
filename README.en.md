@@ -5,7 +5,7 @@
 # MidDeck
 
 **One deck for all your middleware.**
-Kafka · Redis · RabbitMQ — through bastion hosts, with a real GUI, and AI assistance on the way.
+Kafka · Redis · RabbitMQ — through bastion hosts, with a real GUI and an AI assistant.
 
 [![Build](https://github.com/YunMuZhe/MidDeck/actions/workflows/build.yml/badge.svg)](https://github.com/YunMuZhe/MidDeck/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/YunMuZhe/MidDeck?include_prereleases)](https://github.com/YunMuZhe/MidDeck/releases)
@@ -30,6 +30,7 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 
 ### Connectivity
 - **Multi-hop SSH jump hosts + SOCKS5 proxy** (password, private key, ssh-agent). Every connection is dialed from the last hop.
+- **Shared jump hosts**: maintain bastions in one place and pick them (or create one on the spot) when adding a connection; edit once, every connection follows.
 - **Kafka behind NAT just works**: brokers advertising internal addresses are reachable through the tunnel; address rewriting is available too.
 - **Layered diagnostics**: SSH → TCP → TLS → auth → broker reachability → version → permissions, with a concrete hint for each failure.
 - **Version compatibility check**: server version is detected on connect, with warnings for unsupported versions or unavailable features ([matrix](docs/COMPATIBILITY.md)).
@@ -55,6 +56,16 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - Queues and exchanges; create queues (classic / quorum / stream, with DLX, TTL and binding in one step).
 - Peek messages (requeue mode), publish, purge, delete.
 - Export vhost definitions.
+
+### AI assistant (⌘K / Ctrl+K)
+- One sentence finds the instance and opens the right form, prefilled: "create topic order-refund on the prod orders Kafka, 12 partitions, keep 7 days".
+- **Anthropic** (default `claude-opus-5-5`) or any **OpenAI-compatible** endpoint (OpenAI, DeepSeek, Qwen, Ollama…).
+- **Prefill only**: nothing runs until you confirm in the form. The model sees names, projects, environments, tags, aliases and descriptions, never passwords.
+
+### MCP server
+- `MidDeck mcp` serves your connections to Claude Code and Cursor: topics, consumer lag, messages, Redis keys, RabbitMQ queues.
+- Reuses saved connections, jump hosts and keychain credentials. **Read-only**; changes stay in the app.
+- Setup: Settings (bottom left) → "Use in Claude Code / Cursor (MCP)", or see [docs/MCP.md](docs/MCP.md).
 
 ### Interface
 - English / Chinese (English by default); light, dark or follow-system theme
@@ -84,8 +95,9 @@ Download from [Releases](https://github.com/YunMuZhe/MidDeck/releases):
 - [x] Kafka / Redis / RabbitMQ essentials
 - [ ] **Changesets**: describe topics / queues in YAML, plan → apply, promote across environments, CLI for CI
 - [ ] **Skip & replay**: export stuck messages → move offsets → replay after the fix (tagged with replay headers)
-- [ ] **AI assistant**: OpenAI-compatible and Anthropic APIs; locate an instance from one sentence and prefill the form (it only prefills, a human confirms)
-- [ ] MCP server for Claude Code / Cursor
+- [x] **AI assistant**: OpenAI-compatible and Anthropic APIs; locate an instance from one sentence and prefill the form (it only prefills, a human confirms)
+- [x] MCP server for Claude Code / Cursor
+- [x] Shared jump hosts
 - [ ] Agent mode for bastions that forbid port forwarding
 - [ ] More middleware: RocketMQ, Pulsar, Elasticsearch, ZooKeeper, Nacos
 

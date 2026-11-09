@@ -10,14 +10,33 @@ const (
 )
 
 // SSHHop is one jump host in an SSH tunnel chain.
+//
+// When BastionID is set the hop refers to a shared jump host (see Bastion) and the
+// remaining fields are filled in from it at connect time.
 type SSHHop struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	AuthType string `json:"authType"` // password | key | agent
-	KeyPath  string `json:"keyPath,omitempty"`
+	BastionID string `json:"bastionId,omitempty"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	User      string `json:"user"`
+	AuthType  string `json:"authType"` // password | key | agent
+	KeyPath   string `json:"keyPath,omitempty"`
 	// Password / key passphrase. Kept in the OS keychain, never written to the config file.
 	Secret string `json:"secret,omitempty"`
+}
+
+// Bastion is a jump host maintained once and shared by many instances.
+type Bastion struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	SSHHop
+}
+
+// BastionView is a bastion as listed in the UI: no secret, plus who uses it.
+type BastionView struct {
+	Bastion
+	HasSecret bool     `json:"hasSecret"`
+	UsedBy    []string `json:"usedBy"`
 }
 
 // Proxy is an optional SOCKS5 proxy used instead of (or before) SSH hops.

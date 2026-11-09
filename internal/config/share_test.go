@@ -38,7 +38,7 @@ func TestExportWithoutPassphraseStripsSecrets(t *testing.T) {
 	if strings.Contains(string(data), "s3cret") || strings.Contains(string(data), "hop-pass") {
 		t.Fatal("plain export leaked secrets")
 	}
-	list, err := DecodeBundle(data, "")
+	list, _, err := DecodeBundle(data, "")
 	if err != nil || len(list) != 1 || list[0].ID != in.ID || list[0].Auth.Password != "" {
 		t.Fatalf("decode: %+v %v", list, err)
 	}
@@ -56,10 +56,10 @@ func TestEncryptedRoundTrip(t *testing.T) {
 	if strings.Contains(string(data), "s3cret") || strings.Contains(string(data), "orders") {
 		t.Fatal("encrypted export contains plaintext")
 	}
-	if _, err := DecodeBundle(data, "wrong"); err == nil {
+	if _, _, err := DecodeBundle(data, "wrong"); err == nil {
 		t.Fatal("wrong passphrase accepted")
 	}
-	if _, err := DecodeBundle(data, ""); err == nil {
+	if _, _, err := DecodeBundle(data, ""); err == nil {
 		t.Fatal("missing passphrase accepted")
 	}
 

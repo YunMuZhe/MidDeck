@@ -160,3 +160,18 @@ pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
 [data-theme='dark'] .diag-step .hint { color: #ffc078; }
 .ant-table-wrapper .ant-table { background: transparent; }
 .ant-tabs-nav { margin-bottom: 14px !important; }
+
+/* ---------- AI assistant ---------- */
+.assistant-modal .ant-modal-content { padding: 14px 16px; }
+.assistant-input { display: flex; align-items: flex-start; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--md-border); margin-bottom: 12px; }
+.assistant-input .ant-input { font-size: 15px; padding-top: 4px; }
+.assistant-icon { font-size: 20px; color: var(--md-active-text); margin-top: 6px; }
+.assistant-examples { padding: 2px 0 4px; }
+.assistant-example { padding: 7px 10px; border-radius: 6px; cursor: pointer; color: var(--md-text-2); }
+.assistant-example:hover { background: var(--md-hover); color: var(--md-text); }
+.assistant-foot { font-size: 12px; margin-top: 10px; text-align: right; }
+.proposal { border: 1px solid var(--md-border); border-radius: 10px; padding: 14px; background: var(--md-tile-bg); }
+.proposal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.inst-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--md-main-bg); border: 1px solid var(--md-border); margin: 0 6px 6px 0; }
+.inst-chip.clickable { cursor: pointer; }
+.inst-chip.clickable:hover { border-color: var(--md-active-text); }

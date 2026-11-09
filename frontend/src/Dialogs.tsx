@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { App, Alert, Checkbox, Input, Modal, Radio, Space, Table, Tag, Typography } from 'antd'
 import { api, errMsg } from './api'
-import { EnvTag, fmtTime, KindIcon } from './common'
+import { CopyCommand, EnvTag, fmtTime, KindIcon } from './common'
 import { useT } from './settings'
 import type { AuditEntry, Instance, Matrix } from './types'
 
@@ -155,6 +155,31 @@ export function AboutModal({ open, version, onClose }: { open: boolean; version:
           ),
         }}
       />
+    </Modal>
+  )
+}
+
+export function MCPModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT()
+  const [info, setInfo] = useState<{ command: string; args: string[] } | null>(null)
+  useEffect(() => {
+    if (open) api.mcpInfo().then(setInfo).catch(() => setInfo(null))
+  }, [open])
+  const exe = info?.command ?? 'MidDeck'
+  const q = (s: string) => (/[\s"]/.test(s) ? JSON.stringify(s) : s)
+  const json = JSON.stringify({ mcpServers: { middeck: { command: exe, args: ['mcp'] } } }, null, 2)
+  return (
+    <Modal title={t('Use MidDeck in Claude Code / Cursor (MCP)')} open={open} onCancel={onClose} footer={null} width={720}>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        {t('MidDeck can run as an MCP server so AI coding tools can look up your Kafka topics, consumer lag, Redis keys and RabbitMQ queues — through the same SSH jump hosts and keychain credentials. It is read-only: changes stay in this app.')}
+      </Typography.Paragraph>
+      <CopyCommand title="Claude Code" cmd={`claude mcp add middeck -- ${q(exe)} mcp`} />
+      <CopyCommand title={t('Cursor: ~/.cursor/mcp.json (or .cursor/mcp.json in a project)')} cmd={json} />
+      <Alert style={{ marginTop: 14 }} type="info" showIcon
+        message={t('Tools: list_instances, server_info, kafka_list_topics, kafka_describe_topic, kafka_fetch_messages, kafka_list_groups, kafka_describe_group, redis_info, redis_scan, redis_get, redis_command (read-only), redis_slowlog, rabbit_list_queues, rabbit_list_exchanges, rabbit_queue_bindings, rabbit_peek.')} />
+      <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
+        {t('The path points at this copy of MidDeck. If you move the app, update the path.')}
+      </Typography.Paragraph>
     </Modal>
   )
 }

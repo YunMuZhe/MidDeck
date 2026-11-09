@@ -5,7 +5,7 @@
 # MidDeck
 
 **一个客户端，管好你所有的中间件。**
-Kafka · Redis · RabbitMQ —— 穿透堡垒机、可视化运维、AI 辅助（规划中）。
+Kafka · Redis · RabbitMQ —— 穿透堡垒机、可视化运维、AI 辅助。
 
 [![Build](https://github.com/YunMuZhe/MidDeck/actions/workflows/build.yml/badge.svg)](https://github.com/YunMuZhe/MidDeck/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/YunMuZhe/MidDeck?include_prereleases)](https://github.com/YunMuZhe/MidDeck/releases)
@@ -30,6 +30,7 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 
 ### 连接与网络
 - **多级 SSH 跳板 + SOCKS5 代理**：密码 / 私钥 / ssh-agent 认证，所有连接从最后一跳发起
+- **跳板机统一维护**：跳板机集中管理，新建连接时直接选用（也可当场新建），改一处所有连接同步生效
 - **Kafka 内网地址自动可达**：broker 通告的 `advertised.listeners` 是内网地址也能用；还支持地址映射
 - **分层连接诊断**：SSH → TCP → TLS → 认证 → broker 可达性 → 版本 → 权限，逐层告诉你哪一步出问题、怎么修
 - **版本兼容性检测**：连接后自动识别服务端版本，不兼容或功能受限时给出提示（[支持矩阵](docs/COMPATIBILITY.md)）
@@ -55,6 +56,16 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - 队列 / Exchange 列表，新建队列（classic / quorum / stream，死信、TTL、绑定一步完成）
 - 查看消息（requeue 模式）、发布消息、清空队列、删除队列
 - 导出 vhost definitions
+
+### AI 助手（⌘K / Ctrl+K）
+- 一句话定位实例并打开预填好的表单，例如“在生产订单 Kafka 上建 topic order-refund，12 分区，保留 7 天”
+- 支持 **Anthropic 协议**（默认 `claude-opus-5-5`）和 **OpenAI 兼容协议**（OpenAI、DeepSeek、通义千问、Ollama 等）
+- **只预填、不执行**：每一步都需要你在表单里确认；模型只能看到名称、项目、环境、标签、别名和描述，看不到密码
+
+### MCP Server
+- `MidDeck mcp` 以 MCP Server 运行，在 Claude Code、Cursor 里直接查 topic、消费积压、Redis key、RabbitMQ 队列
+- 复用 MidDeck 已保存的连接、跳板机和钥匙串凭据；**只读**，写操作仍在 App 内完成
+- 配置方法：左下角设置 → “在 Claude Code / Cursor 中使用（MCP）”，或见 [docs/MCP.md](docs/MCP.md)
 
 ### 界面
 - 中文 / English 切换（默认英文），浅色 / 深色 / 跟随系统
@@ -84,8 +95,9 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - [x] Kafka / Redis / RabbitMQ 基础运维
 - [ ] **变更集**：用 YAML 描述 topic / 队列，plan → apply，跨环境推广，CLI 可接入 CI
 - [ ] **消息跳过与回放**：导出卡住的消息 → 移动 offset → 修复后回放（附带回放标记 header）
-- [ ] **AI 助手**：支持 OpenAI 兼容协议与 Anthropic 协议，一句话定位实例并预填表单（只预填，人工确认后执行）
-- [ ] MCP Server：在 Claude Code、Cursor 中直接查询中间件
+- [x] **AI 助手**：支持 OpenAI 兼容协议与 Anthropic 协议，一句话定位实例并预填表单（只预填，人工确认后执行）
+- [x] MCP Server：在 Claude Code、Cursor 中直接查询中间件
+- [x] 跳板机统一维护
 - [ ] Agent 模式：堡垒机禁止端口转发时，通过部署在内网的轻量 agent 访问
 - [ ] 更多中间件：RocketMQ、Pulsar、Elasticsearch、ZooKeeper、Nacos
 

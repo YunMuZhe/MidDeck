@@ -22,6 +22,7 @@ type Store struct {
 	mu        sync.Mutex
 	path      string
 	instances map[string]*Instance
+	bastions  map[string]*Bastion
 	// fileSecrets is true when the keychain is unavailable and secrets fall back to the file.
 	fileSecrets bool
 }
@@ -30,6 +31,7 @@ type fileFormat struct {
 	Version     int         `json:"version"`
 	FileSecrets bool        `json:"fileSecrets,omitempty"`
 	Instances   []*Instance `json:"instances"`
+	Bastions    []*Bastion  `json:"bastions,omitempty"`
 }
 
 // DefaultDir returns the per-user data directory for MidDeck.
@@ -46,7 +48,7 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{path: filepath.Join(dir, "instances.json"), instances: map[string]*Instance{}}
+	s := &Store{path: filepath.Join(dir, "instances.json"), instances: map[string]*Instance{}, bastions: map[string]*Bastion{}}
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -61,6 +63,9 @@ func Open(dir string) (*Store, error) {
 	s.fileSecrets = f.FileSecrets
 	for _, in := range f.Instances {
 		s.instances[in.ID] = in
+	}
+	for _, b := range f.Bastions {
+		s.bastions[b.ID] = b
 	}
 	return s, nil
 }
@@ -145,6 +150,10 @@ func (s *Store) flush() error {
 		f.Instances = append(f.Instances, in)
 	}
 	sort.Slice(f.Instances, func(i, j int) bool { return f.Instances[i].ID < f.Instances[j].ID })
+	for _, b := range s.bastions {
+		f.Bastions = append(f.Bastions, b)
+	}
+	sort.Slice(f.Bastions, func(i, j int) bool { return f.Bastions[i].ID < f.Bastions[j].ID })
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
@@ -181,6 +190,9 @@ func (s *Store) storeSecrets(in *Instance) error {
 		return err
 	}
 	for i, h := range in.Network.SSH {
+		if h.BastionID != "" {
+			h.Secret = ""
+		}
 		if err := set(fmt.Sprintf("%s/ssh/%d", in.ID, i), h.Secret); err != nil {
 			return err
 		}

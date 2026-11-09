@@ -4,12 +4,12 @@ import { MinusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } fro
 import { api, errMsg } from '../api'
 import { CopyCommand, num, useDangerConfirm } from '../common'
 import { useT } from '../settings'
-import type { Instance, Topic, TopicDetail } from '../types'
+import type { ActionArgs, Instance, Topic, TopicDetail } from '../types'
 import { kafkaCli } from './KafkaView'
 
 const commonConfigs = ['retention.ms', 'cleanup.policy', 'min.insync.replicas', 'max.message.bytes', 'retention.bytes', 'compression.type']
 
-export default function TopicsTab({ inst, onBrowse, onChanged }: { inst: Instance; onBrowse: (t: string) => void; onChanged: () => void }) {
+export default function TopicsTab({ inst, prefill, onBrowse, onChanged }: { inst: Instance; prefill?: ActionArgs; onBrowse: (t: string) => void; onChanged: () => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [topics, setTopics] = useState<Topic[]>([])
@@ -19,6 +19,9 @@ export default function TopicsTab({ inst, onBrowse, onChanged }: { inst: Instanc
   const [detail, setDetail] = useState<TopicDetail | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const confirm = useDangerConfirm(inst)
+  useEffect(() => {
+    if (prefill) setCreateOpen(true)
+  }, [prefill])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -108,16 +111,27 @@ export default function TopicsTab({ inst, onBrowse, onChanged }: { inst: Instanc
           },
         ]}
       />
-      <CreateTopicModal inst={inst} open={createOpen} onClose={() => setCreateOpen(false)} onDone={changed} />
+      <CreateTopicModal inst={inst} initial={prefill} open={createOpen} onClose={() => setCreateOpen(false)} onDone={changed} />
       <TopicDrawer inst={inst} detail={detail} onClose={() => setDetail(null)} onChanged={(n) => { openDetail(n); changed() }} />
     </>
   )
 }
 
-function CreateTopicModal({ inst, open, onClose, onDone }: { inst: Instance; open: boolean; onClose: () => void; onDone: () => void }) {
+function CreateTopicModal({ inst, initial, open, onClose, onDone }: { inst: Instance; initial?: ActionArgs; open: boolean; onClose: () => void; onDone: () => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [form] = Form.useForm()
+  useEffect(() => {
+    if (!open || !initial) return
+    const configs = []
+    if (initial.retention_ms) configs.push({ key: 'retention.ms', value: String(initial.retention_ms) })
+    if (initial.cleanup) configs.push({ key: 'cleanup.policy', value: initial.cleanup })
+    form.setFieldsValue({
+      name: initial.name, configs,
+      ...(initial.partitions ? { partitions: initial.partitions } : {}),
+      ...(initial.replication ? { replication: initial.replication } : {}),
+    })
+  }, [open, initial, form])
   const [busy, setBusy] = useState(false)
   const v = Form.useWatch([], form) ?? {}
   const cfg: Record<string, string> = {}

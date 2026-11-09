@@ -34,6 +34,9 @@ type App struct {
 
 	mu    sync.Mutex
 	conns map[string]*conn
+	// opening holds one lock per instance so concurrent callers (e.g. parallel MCP
+	// tool calls) share one session instead of racing to open several.
+	opening map[string]*sync.Mutex
 }
 
 type conn struct {
@@ -46,15 +49,21 @@ type conn struct {
 func NewApp() *App { return &App{conns: map[string]*conn{}} }
 
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-	dir, err := config.DefaultDir()
-	if err == nil {
-		a.dataDir = dir
-		a.store, err = config.Open(dir)
-	}
-	if err != nil {
+	if err := a.init(ctx); err != nil {
 		runtime.LogErrorf(ctx, "open config store: %v", err)
 	}
+}
+
+// init opens the data directory; shared by the GUI and the headless MCP mode.
+func (a *App) init(ctx context.Context) error {
+	a.ctx = ctx
+	dir, err := config.DefaultDir()
+	if err != nil {
+		return err
+	}
+	a.dataDir = dir
+	a.store, err = config.Open(dir)
+	return err
 }
 
 func (a *App) shutdown(context.Context) {
@@ -127,10 +136,61 @@ func (a *App) ImportInstances(passphrase string, policy string) (config.ImportRe
 	return a.store.Import(data, passphrase, config.ConflictPolicy(policy))
 }
 
+// --- shared jump hosts ---------------------------------------------------------
+
+func (a *App) ListBastions() []config.BastionView { return a.store.ListBastions() }
+
+// SaveBastion stores a jump host; connections using it reconnect on next use.
+func (a *App) SaveBastion(b config.Bastion) (config.Bastion, error) {
+	saved, err := a.store.SaveBastion(b)
+	if err != nil {
+		return saved, err
+	}
+	a.mu.Lock()
+	var stale []string
+	for id, c := range a.conns {
+		for _, h := range c.inst.Network.SSH {
+			if h.BastionID == saved.ID {
+				stale = append(stale, id)
+				break
+			}
+		}
+	}
+	a.mu.Unlock()
+	for _, id := range stale {
+		a.Disconnect(id)
+	}
+	return saved, nil
+}
+
+func (a *App) DeleteBastion(id string) error { return a.store.DeleteBastion(id) }
+
+// TestBastion logs in to a single jump host. An empty secret falls back to the stored one.
+func (a *App) TestBastion(b config.Bastion) *diag.Report {
+	if b.ID != "" && b.Secret == "" && b.AuthType != "agent" {
+		if old, err := a.store.GetBastion(b.ID); err == nil {
+			b.Secret = old.Secret
+		}
+	}
+	b.BastionID = ""
+	rep := &diag.Report{}
+	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+	defer cancel()
+	d := tunnel.New(config.Network{SSH: []config.SSHHop{b.SSHHop}}, filepath.Join(a.dataDir, "known_hosts"))
+	if err := d.Connect(ctx, rep); err == nil {
+		d.Close()
+	}
+	return rep.Finish()
+}
+
 // --- connections --------------------------------------------------------------
 
 func (a *App) open(ctx context.Context, inst config.Instance) (*conn, *diag.Report) {
 	rep := &diag.Report{}
+	if err := a.store.Resolve(&inst); err != nil {
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error()})
+		return nil, rep.Finish()
+	}
 	d := tunnel.New(inst.Network, filepath.Join(a.dataDir, "known_hosts"))
 	if err := d.Connect(ctx, rep); err != nil {
 		return nil, rep.Finish()
@@ -210,7 +270,7 @@ func fillSecrets(dst *config.Instance, src config.Instance) {
 		dst.Network.Proxy.Secret = src.Network.Proxy.Secret
 	}
 	for i := range dst.Network.SSH {
-		if dst.Network.SSH[i].Secret == "" && i < len(src.Network.SSH) {
+		if dst.Network.SSH[i].BastionID == "" && dst.Network.SSH[i].Secret == "" && i < len(src.Network.SSH) {
 			dst.Network.SSH[i].Secret = src.Network.SSH[i].Secret
 		}
 	}
@@ -224,6 +284,18 @@ type ConnectResult struct {
 
 // Connect opens (or reuses) a session for a saved instance.
 func (a *App) Connect(id string) (ConnectResult, error) {
+	a.mu.Lock()
+	if a.opening == nil {
+		a.opening = map[string]*sync.Mutex{}
+	}
+	lock, ok := a.opening[id]
+	if !ok {
+		lock = &sync.Mutex{}
+		a.opening[id] = lock
+	}
+	a.mu.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
 	a.mu.Lock()
 	if c, ok := a.conns[id]; ok {
 		a.mu.Unlock()

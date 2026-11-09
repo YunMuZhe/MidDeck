@@ -5,9 +5,9 @@ import dayjs from 'dayjs'
 import { api, errMsg } from '../api'
 import { fmtBytes, fmtTime, prettyJSON } from '../common'
 import { useT } from '../settings'
-import type { Instance, Message, Topic } from '../types'
+import type { ActionArgs, Instance, Message, Topic } from '../types'
 
-export default function MessagesTab({ inst, topic }: { inst: Instance; topic?: { name: string; n: number } }) {
+export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; topic?: { name: string; n: number }; prefill?: ActionArgs }) {
   const { message } = App.useApp()
   const t = useT()
   const [form] = Form.useForm()
@@ -46,6 +46,21 @@ export default function MessagesTab({ inst, topic }: { inst: Instance; topic?: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic])
+
+  useEffect(() => {
+    if (!prefill) return
+    form.resetFields()
+    form.setFieldsValue({
+      topic: prefill.topic,
+      partition: prefill.partition ?? -1,
+      mode: prefill.mode ?? (prefill.since ? 'timestamp' : 'newest'),
+      offset: prefill.offset,
+      time: prefill.since ? dayjs(prefill.since) : undefined,
+      limit: prefill.limit ?? 100,
+      keyFilter: prefill.key,
+      contains: prefill.contains,
+    })
+  }, [prefill, form])
 
   return (
     <>

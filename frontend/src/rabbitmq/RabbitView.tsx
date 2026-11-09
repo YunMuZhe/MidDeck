@@ -4,9 +4,9 @@ import { ExclamationCircleFilled, ExportOutlined, PlusOutlined, ReloadOutlined, 
 import { api, errMsg } from '../api'
 import { CopyCommand, fmtBytes, num, prettyJSON, Tiles, useDangerConfirm } from '../common'
 import { useT } from '../settings'
-import type { Binding, Exchange, Instance, PeekedMessage, Queue } from '../types'
+import type { ActionArgs, Intent, Binding, Exchange, Instance, PeekedMessage, Queue } from '../types'
 
-export default function RabbitView({ inst }: { inst: Instance }) {
+export default function RabbitView({ inst, intent, onIntentDone }: { inst: Instance; intent?: Intent; onIntentDone: () => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [queues, setQueues] = useState<Queue[] | null>(null)
@@ -16,7 +16,30 @@ export default function RabbitView({ inst }: { inst: Instance }) {
   const [peek, setPeek] = useState<Queue | null>(null)
   const [createQ, setCreateQ] = useState(false)
   const [createX, setCreateX] = useState(false)
-  const [publish, setPublish] = useState<{ exchange: string; routingKey: string } | null>(null)
+  const [publish, setPublish] = useState<{ exchange: string; routingKey: string; payload?: string } | null>(null)
+  const [tab, setTab] = useState('q')
+  const [queuePrefill, setQueuePrefill] = useState<ActionArgs>()
+
+  // Proposals from the AI assistant: open the matching form, filled in, never run it.
+  useEffect(() => {
+    if (!intent) return
+    const a = intent.args
+    switch (intent.action) {
+      case 'open_instance':
+        if (a.tab === 'queues') setTab('q')
+        if (a.tab === 'exchanges') setTab('x')
+        break
+      case 'rabbit_create_queue':
+        setTab('q')
+        setQueuePrefill({ ...a, seq: intent.seq })
+        setCreateQ(true)
+        break
+      case 'rabbit_publish':
+        setPublish({ exchange: a.exchange ?? '', routingKey: a.routing_key ?? '', payload: a.payload })
+        break
+    }
+    onIntentDone()
+  }, [intent, onIntentDone])
   const confirm = useDangerConfirm(inst)
 
   const load = useCallback(async () => {
@@ -82,6 +105,8 @@ export default function RabbitView({ inst }: { inst: Instance }) {
         ]}
       />
       <Tabs
+        activeKey={tab}
+        onChange={setTab}
         items={[
           {
             key: 'q', label: t('Queues'),
@@ -132,7 +157,7 @@ export default function RabbitView({ inst }: { inst: Instance }) {
         ]}
       />
       {peek && <PeekDrawer inst={inst} queue={peek} onClose={() => setPeek(null)} />}
-      <CreateQueueModal inst={inst} open={createQ} exchanges={exchanges} onClose={() => setCreateQ(false)} onDone={load} />
+      <CreateQueueModal inst={inst} initial={queuePrefill} open={createQ} exchanges={exchanges} onClose={() => setCreateQ(false)} onDone={load} />
       <CreateExchangeModal inst={inst} open={createX} onClose={() => setCreateX(false)} onDone={load} />
       {publish && <PublishModal inst={inst} init={publish} exchanges={exchanges} onClose={() => { setPublish(null); load() }} />}
     </>
@@ -202,10 +227,17 @@ function PeekDrawer({ inst, queue, onClose }: { inst: Instance; queue: Queue; on
   )
 }
 
-function CreateQueueModal({ inst, open, exchanges, onClose, onDone }: { inst: Instance; open: boolean; exchanges: Exchange[]; onClose: () => void; onDone: () => void }) {
+function CreateQueueModal({ inst, initial, open, exchanges, onClose, onDone }: { inst: Instance; initial?: ActionArgs; open: boolean; exchanges: Exchange[]; onClose: () => void; onDone: () => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [form] = Form.useForm()
+  useEffect(() => {
+    if (!open || !initial) return
+    form.setFieldsValue({
+      name: initial.name, bindExchange: initial.bind_exchange || undefined, routingKey: initial.routing_key,
+      ...(initial.type ? { type: initial.type } : {}),
+    })
+  }, [open, initial, form])
   const v = Form.useWatch([], form) ?? {}
   const submit = async () => {
     const x = await form.validateFields()
@@ -278,7 +310,7 @@ function CreateExchangeModal({ inst, open, onClose, onDone }: { inst: Instance; 
   )
 }
 
-function PublishModal({ inst, init, exchanges, onClose }: { inst: Instance; init: { exchange: string; routingKey: string }; exchanges: Exchange[]; onClose: () => void }) {
+function PublishModal({ inst, init, exchanges, onClose }: { inst: Instance; init: { exchange: string; routingKey: string; payload?: string }; exchanges: Exchange[]; onClose: () => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [form] = Form.useForm()

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
-  App, AutoComplete, Button, Checkbox, Col, Divider, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Space, Tabs, Typography,
+  App, AutoComplete, Button, Checkbox, Col, Divider, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Space, Tabs, Tag, Typography,
 } from 'antd'
-import { ApiOutlined, DeleteOutlined, LockOutlined, PlusOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { ApiOutlined, CloudServerOutlined, DeleteOutlined, EditOutlined, LockOutlined, PlusOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { api, errMsg } from './api'
+import { BastionForm, hopSummary } from './Bastions'
 import { DiagReport, KindIcon } from './common'
 import { useT } from './settings'
-import { emptyInstance, type Instance, type Kind, type Report } from './types'
+import { emptyInstance, type Bastion, type BastionView, type Instance, type Kind, type Report, type SSHHop } from './types'
 
 interface Props {
   open: boolean
@@ -24,7 +25,7 @@ const toForm = (i: Instance): FormValues => ({
   ...i,
   network: {
     proxy: i.network.proxy ?? { type: '', addr: '' },
-    ssh: i.network.ssh ?? [],
+    ssh: (i.network.ssh ?? []).map((h) => ({ ...h, bastionId: h.bastionId ?? '' })),
     addrMapText: Object.entries(i.network.addrMap ?? {}).map(([k, v]) => `${k} => ${v}`).join('\n'),
   },
 })
@@ -43,7 +44,11 @@ const fromForm = (v: FormValues, base: Instance): Instance => {
     addrs: v.addrs ?? [],
     auth: { ...base.auth, ...v.auth },
     tls: { ...base.tls, ...v.tls },
-    network: { proxy: v.network.proxy ?? { type: '', addr: '' }, ssh: v.network.ssh ?? [], addrMap },
+    network: {
+      proxy: v.network.proxy ?? { type: '', addr: '' },
+      ssh: (v.network.ssh ?? []).map((h) => (h.bastionId ? ({ bastionId: h.bastionId } as SSHHop) : { ...h, bastionId: undefined })),
+      addrMap,
+    },
   }
 }
 
@@ -67,6 +72,10 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
   const tlsOn = Form.useWatch(['tls', 'enabled'], form)
   const proxyType = Form.useWatch(['network', 'proxy', 'type'], form)
   const hops = (Form.useWatch(['network', 'ssh'], form) ?? []).length
+  const [bastions, setBastions] = useState<BastionView[]>([])
+  const [bastionEdit, setBastionEdit] = useState<{ hop: number; initial: Bastion | null } | null>(null)
+  const loadBastions = () => api.listBastions().then(setBastions).catch(() => {})
+  const openBastion = (hop: number, initial: Bastion | null) => setBastionEdit({ hop, initial })
 
   useEffect(() => {
     if (!open) return
@@ -75,6 +84,7 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
     setReport(null)
     form.resetFields()
     form.setFieldsValue(toForm(b))
+    loadBastions()
   }, [open, initial, form])
 
   const current = () => fromForm(form.getFieldsValue(true) as FormValues, base)
@@ -243,40 +253,79 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
           <>
             {fields.map((f, idx) => (
               <div key={f.key} className="code-block" style={{ marginBottom: 10, paddingBottom: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                  <Typography.Text strong>{t('Hop {n}', { n: idx + 1 })}</Typography.Text>
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => remove(f.name)} style={{ marginLeft: 'auto' }} />
-                </div>
-                <Row gutter={8}>
-                  <Col span={10}><Form.Item name={[f.name, 'host']} label={t('Host')} rules={[{ required: true, message: t('Required') }]}><Input /></Form.Item></Col>
-                  <Col span={4}><Form.Item name={[f.name, 'port']} label={t('Port')}><InputNumber min={1} max={65535} placeholder="22" style={{ width: '100%' }} /></Form.Item></Col>
-                  <Col span={10}><Form.Item name={[f.name, 'user']} label={t('User')} rules={[{ required: true, message: t('Required') }]}><Input /></Form.Item></Col>
-                  <Col span={8}>
-                    <Form.Item name={[f.name, 'authType']} label={t('Auth')}>
-                      <Select options={[{ value: 'password', label: t('Password') }, { value: 'key', label: t('Private key') }, { value: 'agent', label: 'ssh-agent' }]} />
-                    </Form.Item>
-                  </Col>
-                  <Form.Item noStyle shouldUpdate>
-                    {() => {
-                      const a = form.getFieldValue(['network', 'ssh', f.name, 'authType'])
-                      return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <Typography.Text strong style={{ whiteSpace: 'nowrap' }}>{t('Hop {n}', { n: idx + 1 })}</Typography.Text>
+                  <Form.Item name={[f.name, 'bastionId']} noStyle>
+                    <Select
+                      style={{ flex: 1, minWidth: 0 }}
+                      options={[
+                        ...bastions.map((b) => ({ value: b.id, label: <Space><CloudServerOutlined />{b.name}<span className="muted mono">{hopSummary(b)}</span></Space> })),
+                        { value: '', label: t('Custom (this connection only)') },
+                      ]}
+                      dropdownRender={(menu) => (
                         <>
-                          {a === 'key' && <Col span={8}><Form.Item name={[f.name, 'keyPath']} label={t('Key path')}><Input placeholder="~/.ssh/id_rsa" /></Form.Item></Col>}
-                          {a !== 'agent' && (
-                            <Col span={8}>
-                              <Form.Item name={[f.name, 'secret']} label={a === 'key' ? t('Key passphrase') : t('Password')}>
-                                <Input.Password autoComplete="new-password" placeholder={keepHint} />
-                              </Form.Item>
-                            </Col>
-                          )}
+                          {menu}
+                          <Divider style={{ margin: '4px 0' }} />
+                          <Button type="text" block icon={<PlusOutlined />} style={{ textAlign: 'left' }} onClick={() => openBastion(f.name, null)}>{t('New jump host')}</Button>
                         </>
-                      )
-                    }}
+                      )}
+                    />
                   </Form.Item>
-                </Row>
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => remove(f.name)} />
+                </div>
+                <Form.Item noStyle shouldUpdate>
+                  {() => {
+                    const hop = (form.getFieldValue(['network', 'ssh', f.name]) ?? {}) as SSHHop
+                    const shared = hop.bastionId ? bastions.find((b) => b.id === hop.bastionId) : undefined
+                    if (hop.bastionId) {
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12 }}>
+                          {shared ? (
+                            <>
+                              <span className="mono">{hopSummary(shared)}</span>
+                              <Tag bordered={false}>{shared.authType === 'agent' ? 'ssh-agent' : shared.authType === 'key' ? t('Private key') : t('Password')}</Tag>
+                              <span className="muted">{t('Shared by {n} connection(s)', { n: shared.usedBy?.length ?? 0 })}</span>
+                              <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openBastion(f.name, shared)} style={{ marginLeft: 'auto' }}>{t('Edit jump host')}</Button>
+                            </>
+                          ) : (
+                            <Typography.Text type="danger">{t('This jump host was deleted; pick another one.')}</Typography.Text>
+                          )}
+                        </div>
+                      )
+                    }
+                    const a = hop.authType
+                    return (
+                      <Row gutter={8}>
+                        <Col span={10}><Form.Item name={[f.name, 'host']} label={t('Host')} rules={[{ required: true, message: t('Required') }]}><Input /></Form.Item></Col>
+                        <Col span={4}><Form.Item name={[f.name, 'port']} label={t('Port')}><InputNumber min={1} max={65535} placeholder="22" style={{ width: '100%' }} /></Form.Item></Col>
+                        <Col span={10}><Form.Item name={[f.name, 'user']} label={t('User')} rules={[{ required: true, message: t('Required') }]}><Input /></Form.Item></Col>
+                        <Col span={8}>
+                          <Form.Item name={[f.name, 'authType']} label={t('Auth')}>
+                            <Select options={[{ value: 'password', label: t('Password') }, { value: 'key', label: t('Private key') }, { value: 'agent', label: 'ssh-agent' }]} />
+                          </Form.Item>
+                        </Col>
+                        {a === 'key' && <Col span={8}><Form.Item name={[f.name, 'keyPath']} label={t('Key path')}><Input placeholder="~/.ssh/id_rsa" /></Form.Item></Col>}
+                        {a !== 'agent' && (
+                          <Col span={8}>
+                            <Form.Item name={[f.name, 'secret']} label={a === 'key' ? t('Key passphrase') : t('Password')}>
+                              <Input.Password autoComplete="new-password" placeholder={keepHint} />
+                            </Form.Item>
+                          </Col>
+                        )}
+                        <Col span={24} style={{ marginTop: -12, paddingBottom: 10 }}>
+                          <Button size="small" type="link" style={{ padding: 0 }} icon={<CloudServerOutlined />}
+                            onClick={() => openBastion(f.name, { ...hop, id: '', name: hop.host ?? '', bastionId: undefined } as Bastion)}>
+                            {t('Save as shared jump host')}
+                          </Button>
+                        </Col>
+                      </Row>
+                    )
+                  }}
+                </Form.Item>
               </div>
             ))}
-            <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ host: '', port: 22, user: '', authType: 'key', keyPath: '~/.ssh/id_rsa' })}>
+            <Button type="dashed" block icon={<PlusOutlined />}
+              onClick={() => add(bastions.length ? { bastionId: bastions[0].id } : { bastionId: '', host: '', port: 22, user: '', authType: 'key', keyPath: '~/.ssh/id_rsa' })}>
               {t('Add jump host')}
             </Button>
           </>
@@ -338,6 +387,17 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
           {testing ? <Typography.Text type="secondary">{t('Checking network → auth → version → permissions…')}</Typography.Text> : <DiagReport report={report} />}
         </>
       )}
+      <BastionForm
+        open={!!bastionEdit}
+        initial={bastionEdit?.initial}
+        onClose={() => setBastionEdit(null)}
+        onSaved={async (b) => {
+          const hop = bastionEdit?.hop
+          setBastionEdit(null)
+          await loadBastions()
+          if (hop !== undefined) form.setFieldValue(['network', 'ssh', hop], { bastionId: b.id })
+        }}
+      />
     </Drawer>
   )
 }

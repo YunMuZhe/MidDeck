@@ -5,7 +5,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { api, errMsg } from '../api'
 import { CopyCommand, num, useDangerConfirm } from '../common'
 import { useT } from '../settings'
-import type { GroupDetail, GroupSummary, Instance, OffsetChange } from '../types'
+import type { ActionArgs, GroupDetail, GroupSummary, Instance, OffsetChange } from '../types'
 import { kafkaCli } from './KafkaView'
 
 const stateBadge: Record<string, 'success' | 'default' | 'warning' | 'error'> = {
@@ -19,7 +19,7 @@ const LagValue = ({ lag }: { lag: number }) => (
   </span>
 )
 
-export default function GroupsTab({ inst, onChanged }: { inst: Instance; onChanged: () => void }) {
+export default function GroupsTab({ inst, onChanged, resetPrefill }: { inst: Instance; onChanged: () => void; resetPrefill?: ActionArgs }) {
   const { message } = App.useApp()
   const t = useT()
   const [groups, setGroups] = useState<GroupSummary[]>([])
@@ -50,6 +50,11 @@ export default function GroupsTab({ inst, onChanged }: { inst: Instance; onChang
       message.error(errMsg(e))
     }
   }
+
+  useEffect(() => {
+    if (resetPrefill?.group) open(resetPrefill.group)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetPrefill])
 
   const rows = useMemo(
     () => groups.filter((g) => g.group.toLowerCase().includes(q.toLowerCase()) || (g.topics ?? []).some((x) => x.includes(q))),
@@ -89,14 +94,14 @@ export default function GroupsTab({ inst, onChanged }: { inst: Instance; onChang
           },
         ]}
       />
-      {detail && <GroupDrawer inst={inst} detail={detail} onClose={() => setDetail(null)} onRefresh={() => { open(detail.group); load(); onChanged() }} />}
+      {detail && <GroupDrawer inst={inst} detail={detail} reset={resetPrefill} onClose={() => setDetail(null)} onRefresh={() => { open(detail.group); load(); onChanged() }} />}
     </>
   )
 }
 
-function GroupDrawer({ inst, detail, onClose, onRefresh }: { inst: Instance; detail: GroupDetail; onClose: () => void; onRefresh: () => void }) {
+function GroupDrawer({ inst, detail, reset, onClose, onRefresh }: { inst: Instance; detail: GroupDetail; reset?: ActionArgs; onClose: () => void; onRefresh: () => void }) {
   const t = useT()
-  const [resetTopic, setResetTopic] = useState<string | null>(null)
+  const [resetTopic, setResetTopic] = useState<string | null>(reset?.group === detail.group ? reset.topic : null)
   return (
     <Drawer title={detail.group} width={920} open onClose={onClose} extra={<Button icon={<ReloadOutlined />} onClick={onRefresh} />}>
       <Space size="large" style={{ marginBottom: 16 }}>
@@ -123,17 +128,17 @@ function GroupDrawer({ inst, detail, onClose, onRefresh }: { inst: Instance; det
             ]} />
         </div>
       ))}
-      {resetTopic && <ResetModal inst={inst} group={detail} topic={resetTopic} onClose={() => setResetTopic(null)} onDone={onRefresh} />}
+      {resetTopic && <ResetModal inst={inst} group={detail} topic={resetTopic} init={reset?.group === detail.group && reset.topic === resetTopic ? reset : undefined} onClose={() => setResetTopic(null)} onDone={onRefresh} />}
     </Drawer>
   )
 }
 
-function ResetModal({ inst, group, topic, onClose, onDone }: { inst: Instance; group: GroupDetail; topic: string; onClose: () => void; onDone: () => void }) {
+function ResetModal({ inst, group, topic, init, onClose, onDone }: { inst: Instance; group: GroupDetail; topic: string; init?: ActionArgs; onClose: () => void; onDone: () => void }) {
   const { message } = App.useApp()
   const t = useT()
-  const [mode, setMode] = useState('latest')
-  const [value, setValue] = useState(0)
-  const [time, setTime] = useState<Dayjs>(dayjs().subtract(1, 'hour'))
+  const [mode, setMode] = useState<string>(init?.mode ?? 'latest')
+  const [value, setValue] = useState<number>(init?.value ?? 0)
+  const [time, setTime] = useState<Dayjs>(init?.since ? dayjs(init.since) : dayjs().subtract(1, 'hour'))
   const [parts, setParts] = useState<number[]>([])
   const [preview, setPreview] = useState<OffsetChange[] | null>(null)
   const [busy, setBusy] = useState(false)

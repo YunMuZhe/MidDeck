@@ -126,13 +126,13 @@ export function useDangerConfirm(inst: Instance) {
   }
 }
 
-export function CopyCommand({ cmd }: { cmd: string }) {
+export function CopyCommand({ cmd, title }: { cmd: string; title?: string }) {
   const t = useT()
   const { message } = App.useApp()
   return (
     <div className="code-block" style={{ marginTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-        <span className="muted" style={{ fontSize: 12 }}>{t('Equivalent CLI command')}</span>
+        <span className="muted" style={{ fontSize: 12 }}>{title ?? t('Equivalent CLI command')}</span>
         <CopyOutlined
           style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--md-text-3)' }}
           onClick={() => navigator.clipboard.writeText(cmd).then(() => message.success(t('Copied')))}

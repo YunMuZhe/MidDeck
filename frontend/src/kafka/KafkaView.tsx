@@ -4,14 +4,41 @@ import { CheckCircleFilled, ExclamationCircleFilled } from '@ant-design/icons'
 import { api } from '../api'
 import { num, Tiles } from '../common'
 import { useT } from '../settings'
-import type { GroupSummary, Instance, Topic } from '../types'
+import type { ActionArgs, GroupSummary, Instance, Intent, Topic } from '../types'
 import TopicsTab from './TopicsTab'
 import MessagesTab from './MessagesTab'
 import GroupsTab from './GroupsTab'
 
-export default function KafkaView({ inst }: { inst: Instance }) {
+export default function KafkaView({ inst, intent, onIntentDone }: { inst: Instance; intent?: Intent; onIntentDone: () => void }) {
   const t = useT()
   const [tab, setTab] = useState('topics')
+  const [createPrefill, setCreatePrefill] = useState<ActionArgs>()
+  const [searchPrefill, setSearchPrefill] = useState<ActionArgs>()
+  const [resetPrefill, setResetPrefill] = useState<ActionArgs>()
+
+  // Proposals from the AI assistant: open the matching form, filled in, never run it.
+  useEffect(() => {
+    if (!intent) return
+    const a: ActionArgs = { ...intent.args, seq: intent.seq }
+    switch (intent.action) {
+      case 'open_instance':
+        if (['topics', 'messages', 'groups'].includes(a.tab)) setTab(a.tab)
+        break
+      case 'kafka_create_topic':
+        setTab('topics')
+        setCreatePrefill(a)
+        break
+      case 'kafka_search_messages':
+        setTab('messages')
+        setSearchPrefill(a)
+        break
+      case 'kafka_reset_offsets':
+        setTab('groups')
+        setResetPrefill(a)
+        break
+    }
+    onIntentDone()
+  }, [intent, onIntentDone])
   const [msgTopic, setMsgTopic] = useState<{ name: string; n: number }>()
   const [topics, setTopics] = useState<Topic[] | null>(null)
   const [groups, setGroups] = useState<GroupSummary[] | null>(null)
@@ -53,9 +80,9 @@ export default function KafkaView({ inst }: { inst: Instance }) {
         activeKey={tab}
         onChange={setTab}
         items={[
-          { key: 'topics', label: t('Topics'), children: <TopicsTab inst={inst} onBrowse={(name) => { setMsgTopic({ name, n: Date.now() }); setTab('messages') }} onChanged={refreshStats} /> },
-          { key: 'messages', label: t('Messages'), children: <MessagesTab inst={inst} topic={msgTopic} /> },
-          { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} /> },
+          { key: 'topics', label: t('Topics'), children: <TopicsTab inst={inst} prefill={createPrefill} onBrowse={(name) => { setMsgTopic({ name, n: Date.now() }); setTab('messages') }} onChanged={refreshStats} /> },
+          { key: 'messages', label: t('Messages'), children: <MessagesTab inst={inst} topic={msgTopic} prefill={searchPrefill} /> },
+          { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} resetPrefill={resetPrefill} /> },
         ]}
       />
     </>
