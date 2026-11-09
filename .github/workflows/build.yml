@@ -146,6 +146,9 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+          # A fresh install is not on PATH for later steps until we add it.
+          "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:ProgramFiles\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build
         shell: bash
@@ -171,8 +174,18 @@ jobs:
         run: |
           mkdir -p dist
           V=${{ steps.ver.outputs.version }}
-          cp build/bin/MidDeck.exe "dist/MidDeck-$V-${{ matrix.name }}-portable.exe"
-          cp build/bin/*installer.exe "dist/MidDeck-$V-${{ matrix.name }}-setup.exe"
+          echo "build/bin contents:"; ls -la build/bin
+          exe=$(find build/bin -maxdepth 1 -iname '*.exe' ! -iname '*installer*' | head -1)
+          inst=$(find build -iname '*installer*.exe' | head -1)
+          if [ -z "$exe" ]; then
+            echo "::error::no application .exe in build/bin: $(ls build/bin | tr '\n' ' ')"; exit 1
+          fi
+          cp "$exe" "dist/MidDeck-$V-${{ matrix.name }}-portable.exe"
+          if [ -n "$inst" ]; then
+            cp "$inst" "dist/MidDeck-$V-${{ matrix.name }}-setup.exe"
+          else
+            echo "::warning::NSIS installer not found, shipping the portable exe only. build tree: $(find build -iname '*.exe' | tr '\n' ' ')"
+          fi
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -180,7 +193,7 @@ jobs:
           mkdir -p dist
           tar -C build/bin -czf "dist/MidDeck-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz" MidDeck
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: MidDeck-${{ matrix.name }}
           path: dist/*
@@ -191,7 +204,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
