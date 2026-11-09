@@ -652,17 +652,30 @@ func (s *Session) lag(ctx context.Context, groups ...string) (kadm.DescribedGrou
 	return lags, err
 }
 
+// isGroupNotFound reports the error Kafka 4.0+ returns when describing a group
+// that has never committed offsets (older brokers report it as "Dead" instead).
+func isGroupNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "GROUP_ID_NOT_FOUND")
+}
+
 func (s *Session) DescribeGroup(ctx context.Context, group string) (GroupDetail, error) {
 	var d GroupDetail
+	empty := GroupDetail{GroupSummary: GroupSummary{Group: group, State: "Dead"}}
 	lags, err := s.lag(ctx, group)
+	if isGroupNotFound(err) {
+		return empty, nil
+	}
 	if err != nil {
 		return d, err
 	}
 	l, ok := lags[group]
 	if !ok {
-		return d, fmt.Errorf("group %s not found", group)
+		return empty, nil
 	}
 	if err := l.Error(); err != nil {
+		if isGroupNotFound(err) {
+			return empty, nil
+		}
 		return d, err
 	}
 	d.GroupSummary = GroupSummary{Group: group, State: l.State, Members: len(l.Members), Lag: l.Lag.Total()}
