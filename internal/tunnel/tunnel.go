@@ -21,6 +21,7 @@ import (
 
 	"github.com/YunMuZhe/MidDeck/internal/config"
 	"github.com/YunMuZhe/MidDeck/internal/diag"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -54,11 +55,11 @@ func (d *Dialer) Connect(ctx context.Context, rep *diag.Report) error {
 		return nil
 	}
 	if d.cfg.Proxy.Type != "" && rep != nil {
-		rep.Add(diag.Step{Name: "Proxy " + d.cfg.Proxy.Addr, Status: diag.OK, Detail: d.cfg.Proxy.Type})
+		rep.Add(diag.Step{Name: i18n.T("step.proxy", d.cfg.Proxy.Addr), Status: diag.OK, Detail: d.cfg.Proxy.Type})
 	}
 	for i, hop := range d.cfg.SSH {
 		addr := net.JoinHostPort(hop.Host, strconv.Itoa(defaultPort(hop.Port, 22)))
-		name := fmt.Sprintf("SSH hop %d (%s@%s)", i+1, hop.User, addr)
+		name := i18n.T("step.sshHop", i+1, hop.User, addr)
 		connect := func() (string, error) {
 			c, err := d.dialHop(ctx, hop, addr)
 			if err != nil {
@@ -248,15 +249,15 @@ func sshHint(err error) string {
 	s := err.Error()
 	switch {
 	case strings.Contains(s, "unable to authenticate"):
-		return "SSH 认证失败：检查用户名、密码或私钥。堡垒机若要求二次验证（OTP），请先使用私钥认证。"
+		return i18n.T("hint.sshAuth")
 	case strings.Contains(s, "host key mismatch"):
-		return "主机指纹与记录不一致，可能是机器重装或存在中间人，确认后从 known_hosts 中删除旧记录。"
+		return i18n.T("hint.sshHostKey")
 	case strings.Contains(s, "administratively prohibited"), strings.Contains(s, "open failed"):
-		return "跳板机禁止了 TCP 转发（AllowTcpForwarding no）。可改用 Agent 模式或联系运维开通。"
+		return i18n.T("hint.sshForward")
 	case strings.Contains(s, "timeout"), strings.Contains(s, "i/o timeout"):
-		return "连接超时：检查地址、端口、VPN 和防火墙。"
+		return i18n.T("hint.sshTimeout")
 	case strings.Contains(s, "refused"):
-		return "端口拒绝连接：确认 SSH 服务端口是否正确。"
+		return i18n.T("hint.sshRefused")
 	}
 	return ""
 }

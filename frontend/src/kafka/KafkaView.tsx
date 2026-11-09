@@ -1,27 +1,64 @@
+import { useCallback, useEffect, useState } from 'react'
 import { Tabs } from 'antd'
-import type { Instance } from '../types'
+import { CheckCircleFilled, ExclamationCircleFilled } from '@ant-design/icons'
+import { api } from '../api'
+import { num, Tiles } from '../common'
+import { useT } from '../settings'
+import type { GroupSummary, Instance, Topic } from '../types'
 import TopicsTab from './TopicsTab'
 import MessagesTab from './MessagesTab'
 import GroupsTab from './GroupsTab'
-import { useState } from 'react'
 
 export default function KafkaView({ inst }: { inst: Instance }) {
+  const t = useT()
   const [tab, setTab] = useState('topics')
-  const [msgTopic, setMsgTopic] = useState<string>()
+  const [msgTopic, setMsgTopic] = useState<{ name: string; n: number }>()
+  const [topics, setTopics] = useState<Topic[] | null>(null)
+  const [groups, setGroups] = useState<GroupSummary[] | null>(null)
+
+  const refreshStats = useCallback(() => {
+    api.kafkaTopics(inst.id).then(setTopics).catch(() => {})
+    api.kafkaGroups(inst.id).then(setGroups).catch(() => {})
+  }, [inst.id])
+
+  useEffect(() => {
+    refreshStats()
+  }, [refreshStats])
+
+  const userTopics = topics?.filter((x) => !x.internal)
+  const lag = groups?.reduce((s, g) => s + g.lag, 0)
+  const lagging = groups?.filter((g) => g.lag > 0).length ?? 0
+  const stable = groups?.filter((g) => g.state === 'Stable').length ?? 0
+
   return (
-    <Tabs
-      activeKey={tab}
-      onChange={setTab}
-      items={[
-        {
-          key: 'topics',
-          label: 'Topic',
-          children: <TopicsTab inst={inst} onBrowse={(t) => { setMsgTopic(t); setTab('messages') }} />,
-        },
-        { key: 'messages', label: '消息', children: <MessagesTab inst={inst} topic={msgTopic} /> },
-        { key: 'groups', label: '消费组', children: <GroupsTab inst={inst} /> },
-      ]}
-    />
+    <>
+      <Tiles
+        items={[
+          { label: t('Topics'), value: num(userTopics?.length), note: topics ? t('{n} internal', { n: topics.length - (userTopics?.length ?? 0) }) : undefined },
+          { label: t('Partitions'), value: num(userTopics?.reduce((s, x) => s + x.partitions, 0)) },
+          { label: t('Consumer groups'), value: num(groups?.length), note: groups ? t('{n} active', { n: stable }) : undefined },
+          {
+            label: t('Total lag'),
+            value: num(lag),
+            note:
+              lag === undefined ? undefined : lag > 0 ? (
+                <><ExclamationCircleFilled style={{ color: '#f08c00' }} /> {t('{n} group(s) behind', { n: lagging })}</>
+              ) : (
+                <><CheckCircleFilled style={{ color: '#2f9e44' }} /> {t('All caught up')}</>
+              ),
+          },
+        ]}
+      />
+      <Tabs
+        activeKey={tab}
+        onChange={setTab}
+        items={[
+          { key: 'topics', label: t('Topics'), children: <TopicsTab inst={inst} onBrowse={(name) => { setMsgTopic({ name, n: Date.now() }); setTab('messages') }} onChanged={refreshStats} /> },
+          { key: 'messages', label: t('Messages'), children: <MessagesTab inst={inst} topic={msgTopic} /> },
+          { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} /> },
+        ]}
+      />
+    </>
   )
 }
 

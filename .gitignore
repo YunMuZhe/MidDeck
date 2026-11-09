@@ -5,3 +5,5 @@ frontend/wailsjs
 .idea/
 .DS_Store
 *.log
+frontend/package.json.md5
+build/darwin/Info.dev.plist

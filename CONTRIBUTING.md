@@ -15,13 +15,19 @@ go test ./internal/...
 cd frontend && npm run build   # 前端类型检查 + 构建
 ```
 
-想在本地起几个中间件做测试，可以用 Docker：
+本地演练环境（Kafka、Redis、RabbitMQ，外加一台 SSH 跳板机，用来测试隧道）：
 
 ```bash
-docker run -d --name kafka -p 9092:9092 apache/kafka:3.9.0
-docker run -d --name redis -p 6379:6379 redis:7.4
-docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:4-management
+docker compose -f dev/docker-compose.yml up -d
+./dev/seed.sh                 # 写入示例 topic、消息、消费组、key、队列
+go run ./dev/seedconfig       # 把对应的连接配置加进 MidDeck
 ```
+
+跳板机是 `ops / middeck @ localhost:2222`。通过它访问的 `kafka:19092`、`redis:6379` 只在 Docker 网络内可解析，模拟真实内网。
+
+## 国际化
+
+界面默认英文，支持中文。前端文案统一写成 `t('English text')`，中文翻译放在 `frontend/src/zh.ts`；后端文案（诊断步骤、提示、兼容性说明）在 `internal/i18n/i18n.go`。提交前运行 `npm run i18n:check`（CI 也会检查），确保没有漏翻的文案。
 
 ## 新增一种中间件
 

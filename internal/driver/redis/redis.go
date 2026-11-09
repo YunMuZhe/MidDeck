@@ -16,6 +16,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/config"
 	"github.com/YunMuZhe/MidDeck/internal/diag"
 	"github.com/YunMuZhe/MidDeck/internal/driver"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -61,16 +62,16 @@ func IsDangerous(cmd string) bool {
 func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, rep *diag.Report) (*Session, error) {
 	tlsCfg, err := driver.TLSConfig(inst.TLS)
 	if err != nil {
-		rep.Add(diag.Step{Name: "TLS 配置", Status: diag.Fail, Detail: err.Error()})
+		rep.Add(diag.Step{Name: i18n.T("step.tlsConfig"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	if len(inst.Addrs) == 0 {
-		err := errors.New("至少需要一个地址")
-		rep.Add(diag.Step{Name: "配置检查", Status: diag.Fail, Detail: err.Error()})
+		err := errors.New(i18n.T("err.noAddr"))
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	for _, addr := range inst.Addrs {
-		if err := rep.Run("TCP 连通 "+addr, func() (string, error) {
+		if err := rep.Run(i18n.T("step.tcp", addr), func() (string, error) {
 			c, err := rawDial(ctx, "tcp", addr)
 			if err != nil {
 				return "", err
@@ -107,18 +108,18 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		})
 	}
 
-	if err := rep.Run("PING（含认证）", func() (string, error) {
+	if err := rep.Run(i18n.T("redis.ping"), func() (string, error) {
 		return s.cl.Ping(ctx).Result()
 	}, driver.NetHint); err != nil {
 		s.Close()
 		return nil, err
 	}
-	_ = rep.Run("服务端版本识别", func() (string, error) {
+	_ = rep.Run(i18n.T("step.version"), func() (string, error) {
 		info, err := s.Info(ctx)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s %s（%s）· %s", info.Extra["server"], info.Version, info.Mode, info.Compat.Message), nil
+		return i18n.T("redis.versionOK", info.Extra["server"], info.Version, info.Mode, info.Compat.Message), nil
 	}, nil)
 
 	// Detect disabled / renamed commands (common in production via rename-command).
@@ -134,11 +135,11 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 			missing = append(missing, c)
 		}
 	}
-	st := diag.Step{Name: "命令可用性", Status: diag.OK, Duration: time.Since(start).Milliseconds()}
+	st := diag.Step{Name: i18n.T("redis.commands"), Status: diag.OK, Duration: time.Since(start).Milliseconds()}
 	if len(missing) > 0 {
 		st.Status = diag.Warn
-		st.Detail = "以下命令被禁用或改名：" + strings.Join(missing, ", ")
-		st.Hint = "相关功能将不可用（例如禁用 SCAN 时无法浏览 key）。"
+		st.Detail = i18n.T("redis.disabled", strings.Join(missing, ", "))
+		st.Hint = i18n.T("redis.disabledHint")
 	}
 	rep.Add(st)
 	return s, nil
@@ -198,7 +199,7 @@ func (s *Session) Info(ctx context.Context) (driver.ServerInfo, error) {
 	info.Extra["uptimeDays"] = m["uptime_in_days"]
 	info.Compat = compat.Check("redis", info.Version)
 	if info.Extra["server"] != "Redis" {
-		info.Compat.Message += fmt.Sprintf("（检测到兼容实现 %s，部分命令行为可能不同）", info.Extra["server"])
+		info.Compat.Message += i18n.T("redis.compatFork", info.Extra["server"])
 	}
 	return info, nil
 }
@@ -325,7 +326,7 @@ func (s *Session) GetKey(ctx context.Context, key string) (KeyValue, error) {
 		return v, err
 	}
 	if typ == "none" {
-		return v, fmt.Errorf("key %q 不存在", key)
+		return v, errors.New(i18n.T("redis.notExist", key))
 	}
 	v.Type = typ
 	v.TTL = -1
@@ -380,7 +381,7 @@ func (s *Session) GetKey(ctx context.Context, key string) (KeyValue, error) {
 			v.Items = append(v.Items, Field{ID: x.ID, Value: strings.Join(parts, " ")})
 		}
 	default:
-		v.String = "(暂不支持查看该类型：" + typ + ")"
+		v.String = i18n.T("redis.unsupportedType", typ)
 	}
 	v.Truncated = int64(len(v.Items)) < v.Size && typ != "string"
 	return v, err
@@ -419,7 +420,7 @@ func (s *Session) Exec(ctx context.Context, line string) (string, error) {
 		return "", nil
 	}
 	if strings.EqualFold(args[0].(string), "monitor") || strings.EqualFold(args[0].(string), "subscribe") {
-		return "", errors.New("控制台不支持阻塞命令 " + args[0].(string))
+		return "", errors.New(i18n.T("redis.blocking", args[0].(string)))
 	}
 	res, err := s.cl.Do(ctx, args...).Result()
 	if errors.Is(err, goredis.Nil) {
@@ -494,7 +495,7 @@ func splitArgs(line string) ([]any, error) {
 		}
 	}
 	if quote != 0 {
-		return nil, errors.New("引号未闭合")
+		return nil, errors.New(i18n.T("redis.quote"))
 	}
 	if inArg {
 		args = append(args, cur.String())

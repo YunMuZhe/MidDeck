@@ -17,6 +17,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/config"
 	"github.com/YunMuZhe/MidDeck/internal/diag"
 	"github.com/YunMuZhe/MidDeck/internal/driver"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
@@ -40,19 +41,19 @@ type Session struct {
 func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, rep *diag.Report) (*Session, error) {
 	tlsCfg, err := driver.TLSConfig(inst.TLS)
 	if err != nil {
-		rep.Add(diag.Step{Name: "TLS 配置", Status: diag.Fail, Detail: err.Error()})
+		rep.Add(diag.Step{Name: i18n.T("step.tlsConfig"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	if len(inst.Addrs) == 0 {
-		err := errors.New("至少需要一个 bootstrap 地址")
-		rep.Add(diag.Step{Name: "配置检查", Status: diag.Fail, Detail: err.Error()})
+		err := errors.New(i18n.T("err.noBootstrap"))
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 
 	// 1. TCP (+TLS) to every seed broker.
 	reachable := 0
 	for _, addr := range inst.Addrs {
-		err := rep.Run("TCP 连通 "+addr, func() (string, error) {
+		err := rep.Run(i18n.T("step.tcp", addr), func() (string, error) {
 			c, err := rawDial(ctx, "tcp", addr)
 			if err != nil {
 				return "", err
@@ -63,7 +64,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		if err == nil {
 			reachable++
 			if tlsCfg != nil {
-				_ = rep.Run("TLS 握手 "+addr, func() (string, error) {
+				_ = rep.Run(i18n.T("step.tls", addr), func() (string, error) {
 					c, err := driver.WithTLS(rawDial, tlsCfg)(ctx, "tcp", addr)
 					if err != nil {
 						return "", err
@@ -75,7 +76,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		}
 	}
 	if reachable == 0 {
-		return nil, errors.New("所有 bootstrap 地址均不可达")
+		return nil, errors.New(i18n.T("err.allUnreachable"))
 	}
 
 	dial := driver.WithTLS(rawDial, tlsCfg)
@@ -89,7 +90,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 	}
 	mech, err := saslMechanism(inst.Auth)
 	if err != nil {
-		rep.Add(diag.Step{Name: "SASL 配置", Status: diag.Fail, Detail: err.Error()})
+		rep.Add(diag.Step{Name: i18n.T("step.saslConfig"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	if mech != nil {
@@ -103,9 +104,9 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 
 	// 2. Auth + metadata.
 	var md kadm.Metadata
-	authName := "元数据请求"
+	authName := i18n.T("kafka.metadata")
 	if mech != nil {
-		authName = "SASL/" + strings.ToUpper(inst.Auth.Mechanism) + " 认证 + 元数据请求"
+		authName = i18n.T("kafka.saslMetadata", strings.ToUpper(inst.Auth.Mechanism))
 	}
 	if err := rep.Run(authName, func() (string, error) {
 		c, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -115,7 +116,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("集群 %s，%d 个 broker，%d 个 topic", md.Cluster, len(md.Brokers), len(md.Topics)), nil
+		return i18n.T("kafka.metadataOK", md.Cluster, len(md.Brokers), len(md.Topics)), nil
 	}, driver.NetHint); err != nil {
 		s.Close()
 		return nil, err
@@ -126,14 +127,14 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		addr := net.JoinHostPort(b.Host, strconv.Itoa(int(b.Port)))
 		start := time.Now()
 		c, err := rawDial(ctx, "tcp", addr)
-		step := diag.Step{Name: fmt.Sprintf("Broker %d 地址 %s", b.NodeID, addr), Status: diag.OK, Duration: time.Since(start).Milliseconds()}
+		step := diag.Step{Name: i18n.T("kafka.broker", b.NodeID, addr), Status: diag.OK, Duration: time.Since(start).Milliseconds()}
 		if mapped, ok := inst.Network.AddrMap[addr]; ok {
-			step.Detail = "已映射到 " + mapped
+			step.Detail = i18n.T("kafka.mapped", mapped)
 		}
 		if err != nil {
 			step.Status = diag.Warn
 			step.Detail = err.Error()
-			step.Hint = "broker 对外通告的地址（advertised.listeners）从本机不可达。在“地址映射”中把它映射到可达地址，或配置 SSH 跳板。"
+			step.Hint = i18n.T("kafka.brokerHint")
 		} else {
 			c.Close()
 		}
@@ -141,7 +142,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 	}
 
 	// 4. Version.
-	_ = rep.Run("服务端版本识别", func() (string, error) {
+	_ = rep.Run(i18n.T("step.version"), func() (string, error) {
 		info, err := s.Info(ctx)
 		if err != nil {
 			return "", err
@@ -155,15 +156,15 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		err := fn(c)
 		cancel()
-		st := diag.Step{Name: "权限：" + name, Status: diag.OK, Duration: time.Since(start).Milliseconds()}
+		st := diag.Step{Name: i18n.T("step.perm", name), Status: diag.OK, Duration: time.Since(start).Milliseconds()}
 		if err != nil {
 			st.Status = diag.Warn
 			st.Detail = err.Error()
 		}
 		rep.Add(st)
 	}
-	perm("列出 Topic", func(c context.Context) error { _, err := s.adm.ListTopics(c); return err })
-	perm("列出消费组", func(c context.Context) error { _, err := s.adm.ListGroups(c); return err })
+	perm(i18n.T("kafka.permTopics"), func(c context.Context) error { _, err := s.adm.ListTopics(c); return err })
+	perm(i18n.T("kafka.permGroups"), func(c context.Context) error { _, err := s.adm.ListGroups(c); return err })
 	return s, nil
 }
 
@@ -250,9 +251,9 @@ type ConfigEntry struct {
 
 type TopicDetail struct {
 	Topic
-	PartitionList []Partition     `json:"partitionList"`
-	Configs       []ConfigEntry   `json:"configs"`
-	Messages      int64           `json:"messages"`
+	PartitionList []Partition   `json:"partitionList"`
+	Configs       []ConfigEntry `json:"configs"`
+	Messages      int64         `json:"messages"`
 }
 
 func (s *Session) ListTopics(ctx context.Context) ([]Topic, error) {
@@ -582,12 +583,12 @@ func (s *Session) Produce(ctx context.Context, r ProduceReq) (Message, error) {
 // --- consumer groups --------------------------------------------------------
 
 type GroupSummary struct {
-	Group   string `json:"group"`
-	State   string `json:"state"`
-	Members int    `json:"members"`
-	Lag     int64  `json:"lag"`
+	Group   string   `json:"group"`
+	State   string   `json:"state"`
+	Members int      `json:"members"`
+	Lag     int64    `json:"lag"`
 	Topics  []string `json:"topics"`
-	Error   string `json:"error,omitempty"`
+	Error   string   `json:"error,omitempty"`
 }
 
 type PartitionLag struct {
@@ -689,12 +690,12 @@ func (s *Session) DescribeGroup(ctx context.Context, group string) (GroupDetail,
 
 // ResetReq moves a group's committed offsets. Mode: earliest | latest | timestamp | offset | shift.
 type ResetReq struct {
-	Group     string  `json:"group"`
-	Topic     string  `json:"topic"`
+	Group      string  `json:"group"`
+	Topic      string  `json:"topic"`
 	Partitions []int32 `json:"partitions"` // empty = all
-	Mode      string  `json:"mode"`
-	Value     int64   `json:"value"` // offset, unix millis, or shift delta
-	DryRun    bool    `json:"dryRun"`
+	Mode       string  `json:"mode"`
+	Value      int64   `json:"value"` // offset, unix millis, or shift delta
+	DryRun     bool    `json:"dryRun"`
 }
 
 type OffsetChange struct {
@@ -711,7 +712,7 @@ func (s *Session) ResetOffsets(ctx context.Context, r ResetReq) ([]OffsetChange,
 		return nil, err
 	}
 	if !r.DryRun && d.State != "Empty" && d.State != "Dead" {
-		return nil, fmt.Errorf("消费组当前状态为 %s，Kafka 只允许在没有活跃消费者（Empty）时重置 offset，请先停止消费者", d.State)
+		return nil, errors.New(i18n.T("kafka.resetActive", d.State))
 	}
 	starts, err := s.adm.ListStartOffsets(ctx, r.Topic)
 	if err != nil {

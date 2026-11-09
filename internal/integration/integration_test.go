@@ -52,13 +52,13 @@ func checkReport(t *testing.T, rep *diag.Report) {
 
 func checkVersion(t *testing.T, kind, envKey string, info driver.ServerInfo) {
 	t.Helper()
-	t.Logf("%s version %s: %s", kind, info.Version, info.Compat.Message)
+	t.Logf("%s version %s (raw %v): %s", kind, info.Version, info.Extra, info.Compat.Message)
 	if info.Version == "" {
 		t.Fatal("version not detected")
 	}
 	if want := os.Getenv(envKey); want != "" {
 		if info.Version != want && !strings.HasPrefix(info.Version, want+".") {
-			t.Fatalf("detected %s, want %s", info.Version, want)
+			t.Fatalf("detected %s (raw %v), want %s", info.Version, info.Extra, want)
 		}
 		if info.Compat.Level != compat.Tested {
 			t.Fatalf("%s %s is exercised in CI but not listed as tested in compat.Matrices", kind, want)

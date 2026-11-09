@@ -24,15 +24,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Go vet & test
         run: |
           go vet ./internal/...
           go test ./internal/...
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -41,6 +41,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm run i18n:check
           npm run build
 
   # Runs the drivers against real servers. Every version here must be listed as
@@ -69,8 +70,8 @@ jobs:
         ports: ['5672:5672', '15672:15672']
         options: --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s --health-timeout 10s --health-retries 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Integration tests
@@ -82,7 +83,13 @@ jobs:
           MIDDECK_EXPECT_KAFKA: ${{ matrix.expect_kafka }}
           MIDDECK_EXPECT_REDIS: ${{ matrix.expect_redis }}
           MIDDECK_EXPECT_RABBIT: ${{ matrix.expect_rabbit }}
-        run: go test -tags integration -v -count=1 ./internal/integration/
+        # Failing lines are re-emitted as ::error:: annotations so they show up on the run summary.
+        run: |
+          set -o pipefail
+          go test -tags integration -v -count=1 ./internal/integration/ 2>&1 | tee test.log || {
+            grep -E 'integration_test.go:[0-9]+:|--- FAIL|panic' test.log | head -20 | sed 's/^[[:space:]]*/::error::/'
+            exit 1
+          }
 
   build:
     needs: [test, integration]
@@ -104,7 +111,7 @@ jobs:
             name: linux-amd64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Version
         id: ver
@@ -116,10 +123,10 @@ jobs:
             echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -173,7 +180,7 @@ jobs:
           mkdir -p dist
           tar -C build/bin -czf "dist/MidDeck-${{ steps.ver.outputs.version }}-${{ matrix.name }}.tar.gz" MidDeck
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: MidDeck-${{ matrix.name }}
           path: dist/*
@@ -184,7 +191,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true

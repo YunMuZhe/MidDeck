@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/driver/kafka"
 	"github.com/YunMuZhe/MidDeck/internal/driver/rabbitmq"
 	"github.com/YunMuZhe/MidDeck/internal/driver/redis"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -148,7 +150,7 @@ func (a *App) KafkaDeleteGroup(id, group string) error {
 // ExportMessages saves fetched messages as JSON Lines.
 func (a *App) ExportMessages(name string, msgs []json.RawMessage) (string, error) {
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title: "导出消息", DefaultFilename: fmt.Sprintf("%s-%s.jsonl", name, time.Now().Format("20060102-150405")),
+		Title: i18n.T("dlg.exportMessages"), DefaultFilename: fmt.Sprintf("%s-%s.jsonl", name, time.Now().Format("20060102-150405")),
 	})
 	if err != nil || path == "" {
 		return "", err
@@ -233,7 +235,7 @@ func (a *App) RedisExec(id, line string, confirmed bool) (string, error) {
 		return "", err
 	}
 	if redis.IsDangerous(line) && !confirmed {
-		return "", fmt.Errorf("NEED_CONFIRM: 该命令可能修改数据或阻塞服务，请确认后执行")
+		return "", errors.New(i18n.T("err.needConfirm"))
 	}
 	ctx, cancel := a.reqCtx()
 	defer cancel()
@@ -363,7 +365,7 @@ func (a *App) RabbitExportDefinitions(id string) (string, error) {
 		return "", err
 	}
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title: "导出 definitions", DefaultFilename: fmt.Sprintf("%s-definitions.json", c.inst.Name),
+		Title: i18n.T("dlg.exportDefinitions"), DefaultFilename: fmt.Sprintf("%s-definitions.json", c.inst.Name),
 	})
 	if err != nil || path == "" {
 		return "", err

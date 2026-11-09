@@ -19,6 +19,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/config"
 	"github.com/YunMuZhe/MidDeck/internal/diag"
 	"github.com/YunMuZhe/MidDeck/internal/driver"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 )
 
 type Session struct {
@@ -30,12 +31,12 @@ type Session struct {
 func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, rep *diag.Report) (*Session, error) {
 	tlsCfg, err := driver.TLSConfig(inst.TLS)
 	if err != nil {
-		rep.Add(diag.Step{Name: "TLS 配置", Status: diag.Fail, Detail: err.Error()})
+		rep.Add(diag.Step{Name: i18n.T("step.tlsConfig"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	// AMQP port check (optional: only if configured).
 	for _, addr := range inst.Addrs {
-		_ = rep.Run("AMQP 端口连通 "+addr, func() (string, error) {
+		_ = rep.Run(i18n.T("rabbit.amqp", addr), func() (string, error) {
 			c, err := rawDial(ctx, "tcp", addr)
 			if err != nil {
 				return "", err
@@ -45,14 +46,14 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		}, driver.NetHint)
 	}
 	if inst.MgmtURL == "" {
-		err := errors.New("需要配置 Management API 地址，例如 http://host:15672")
-		rep.Add(diag.Step{Name: "配置检查", Status: diag.Fail, Detail: err.Error(), Hint: "确认已启用 rabbitmq_management 插件。"})
+		err := errors.New(i18n.T("rabbit.needMgmt"))
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error(), Hint: i18n.T("rabbit.needMgmtHint")})
 		return nil, err
 	}
 	u, err := url.Parse(strings.TrimRight(inst.MgmtURL, "/"))
 	if err != nil || u.Host == "" {
-		err = fmt.Errorf("management URL 无效: %q", inst.MgmtURL)
-		rep.Add(diag.Step{Name: "配置检查", Status: diag.Fail, Detail: err.Error()})
+		err = errors.New(i18n.T("rabbit.badURL", inst.MgmtURL))
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error()})
 		return nil, err
 	}
 	tr := &http.Transport{
@@ -69,7 +70,7 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 			host += ":80"
 		}
 	}
-	if err := rep.Run("Management API 连通 "+host, func() (string, error) {
+	if err := rep.Run(i18n.T("rabbit.mgmt", host), func() (string, error) {
 		c, err := rawDial(ctx, "tcp", host)
 		if err != nil {
 			return "", err
@@ -79,21 +80,21 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 	}, driver.NetHint); err != nil {
 		return nil, err
 	}
-	if err := rep.Run("认证 + /api/overview", func() (string, error) {
+	if err := rep.Run(i18n.T("rabbit.auth"), func() (string, error) {
 		var ov map[string]any
 		if err := s.get(ctx, "/api/overview", &ov); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("集群 %v", ov["cluster_name"]), nil
+		return i18n.T("rabbit.cluster", ov["cluster_name"]), nil
 	}, func(err error) string {
 		if strings.Contains(err.Error(), "401") {
-			return "用户名或密码错误，或该用户没有 management 标签。"
+			return i18n.T("rabbit.401")
 		}
 		return driver.NetHint(err)
 	}); err != nil {
 		return nil, err
 	}
-	_ = rep.Run("服务端版本识别", func() (string, error) {
+	_ = rep.Run(i18n.T("step.version"), func() (string, error) {
 		info, err := s.Info(ctx)
 		if err != nil {
 			return "", err
@@ -157,10 +158,10 @@ func esc(s string) string { return url.PathEscape(s) }
 func (s *Session) Info(ctx context.Context) (driver.ServerInfo, error) {
 	info := driver.ServerInfo{Kind: "rabbitmq", Extra: map[string]string{}}
 	var ov struct {
-		RabbitMQVersion   string `json:"rabbitmq_version"`
-		ErlangVersion     string `json:"erlang_version"`
-		ManagementVersion string `json:"management_version"`
-		ClusterName       string `json:"cluster_name"`
+		RabbitMQVersion   string         `json:"rabbitmq_version"`
+		ErlangVersion     string         `json:"erlang_version"`
+		ManagementVersion string         `json:"management_version"`
+		ClusterName       string         `json:"cluster_name"`
 		ObjectTotals      map[string]int `json:"object_totals"`
 	}
 	if err := s.get(ctx, "/api/overview", &ov); err != nil {

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { App, Alert, Checkbox, Descriptions, Input, Modal, Radio, Space, Table, Tag, Typography } from 'antd'
+import { App, Alert, Checkbox, Input, Modal, Radio, Space, Table, Tag, Typography } from 'antd'
 import { api, errMsg } from './api'
-import { EnvTag, kindLabel } from './common'
+import { EnvTag, fmtTime, KindIcon } from './common'
+import { useT } from './settings'
 import type { AuditEntry, Instance, Matrix } from './types'
 
 export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const { message } = App.useApp()
+  const t = useT()
   const [pass, setPass] = useState('')
   const [policy, setPolicy] = useState('skip')
   const [busy, setBusy] = useState(false)
@@ -14,7 +16,7 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
     try {
       const r = await api.importInstances(pass, policy)
       if (r.added + r.overwritten + r.skipped > 0) {
-        message.success(`新增 ${r.added}，覆盖 ${r.overwritten}，跳过 ${r.skipped}`)
+        message.success(t('Added {a}, overwritten {o}, skipped {s}', { a: r.added, o: r.overwritten, s: r.skipped }))
         onDone()
         onClose()
       }
@@ -25,16 +27,20 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
     }
   }
   return (
-    <Modal title="导入连接配置" open={open} onCancel={onClose} onOk={run} okText="选择文件并导入" confirmLoading={busy}>
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Typography.Text>口令（文件加密导出时需要）</Typography.Text>
-        <Input.Password value={pass} onChange={(e) => setPass(e.target.value)} placeholder="未加密的文件留空" />
-        <Typography.Text>ID 冲突时</Typography.Text>
-        <Radio.Group value={policy} onChange={(e) => setPolicy(e.target.value)}>
-          <Radio value="skip">跳过</Radio>
-          <Radio value="overwrite">覆盖</Radio>
-          <Radio value="copy">作为副本导入</Radio>
-        </Radio.Group>
+    <Modal title={t('Import connections')} open={open} onCancel={onClose} onOk={run} okText={t('Choose file & import')} cancelText={t('Cancel')} confirmLoading={busy}>
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <div>
+          <div className="muted" style={{ marginBottom: 4 }}>{t('Passphrase (only for encrypted bundles)')}</div>
+          <Input.Password value={pass} onChange={(e) => setPass(e.target.value)} />
+        </div>
+        <div>
+          <div className="muted" style={{ marginBottom: 4 }}>{t('When a connection already exists')}</div>
+          <Radio.Group value={policy} onChange={(e) => setPolicy(e.target.value)}>
+            <Radio value="skip">{t('Skip')}</Radio>
+            <Radio value="overwrite">{t('Overwrite')}</Radio>
+            <Radio value="copy">{t('Import as a copy')}</Radio>
+          </Radio.Group>
+        </div>
       </Space>
     </Modal>
   )
@@ -42,6 +48,7 @@ export function ImportModal({ open, onClose, onDone }: { open: boolean; onClose:
 
 export function ExportModal({ open, instances, onClose }: { open: boolean; instances: Instance[]; onClose: () => void }) {
   const { message } = App.useApp()
+  const t = useT()
   const [ids, setIds] = useState<string[]>([])
   const [withSecrets, setWithSecrets] = useState(false)
   const [pass, setPass] = useState('')
@@ -50,13 +57,13 @@ export function ExportModal({ open, instances, onClose }: { open: boolean; insta
   }, [open, instances])
   const run = async () => {
     if (withSecrets && pass.length < 8) {
-      message.warning('口令至少 8 位')
+      message.warning(t('Passphrase must be at least 8 characters'))
       return
     }
     try {
       const path = await api.exportInstances(ids, withSecrets ? pass : '')
       if (path) {
-        message.success('已导出到 ' + path)
+        message.success(t('Exported to {path}', { path }))
         onClose()
       }
     } catch (e) {
@@ -64,7 +71,7 @@ export function ExportModal({ open, instances, onClose }: { open: boolean; insta
     }
   }
   return (
-    <Modal title="导出连接配置" open={open} onCancel={onClose} onOk={run} okText="导出" width={640} okButtonProps={{ disabled: ids.length === 0 }}>
+    <Modal title={t('Export connections')} open={open} onCancel={onClose} onOk={run} okText={t('Export')} cancelText={t('Cancel')} width={680} okButtonProps={{ disabled: ids.length === 0 }}>
       <Table
         size="small"
         rowKey="id"
@@ -73,20 +80,19 @@ export function ExportModal({ open, instances, onClose }: { open: boolean; insta
         rowSelection={{ selectedRowKeys: ids, onChange: (k) => setIds(k as string[]) }}
         dataSource={instances}
         columns={[
-          { title: '名称', dataIndex: 'name' },
-          { title: '类型', dataIndex: 'kind', render: (k) => kindLabel[k] },
-          { title: '项目', dataIndex: 'project' },
-          { title: '环境', dataIndex: 'env', render: (e) => <EnvTag env={e} /> },
+          { title: t('Name'), dataIndex: 'name', render: (n, r) => <Space><KindIcon kind={r.kind} size={16} />{n}</Space> },
+          { title: t('Project'), dataIndex: 'project' },
+          { title: t('Environment'), dataIndex: 'env', render: (e) => <EnvTag env={e} /> },
         ]}
       />
-      <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
+      <Space direction="vertical" style={{ width: '100%', marginTop: 14 }}>
         <Checkbox checked={withSecrets} onChange={(e) => setWithSecrets(e.target.checked)}>
-          包含密码（使用口令加密，AES-256-GCM）
+          {t('Include passwords (encrypted with a passphrase, AES-256-GCM)')}
         </Checkbox>
         {withSecrets ? (
-          <Input.Password value={pass} onChange={(e) => setPass(e.target.value)} placeholder="至少 8 位，通过其他渠道告知同事" />
+          <Input.Password value={pass} onChange={(e) => setPass(e.target.value)} placeholder={t('At least 8 characters; share it through another channel')} />
         ) : (
-          <Alert type="info" showIcon message="默认不导出密码，同事导入后需自行填写。" />
+          <Alert type="info" showIcon message={t('Passwords are not exported by default; teammates fill them in after importing.')} />
         )}
       </Space>
     </Modal>
@@ -94,53 +100,61 @@ export function ExportModal({ open, instances, onClose }: { open: boolean; insta
 }
 
 export function AuditModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT()
   const [rows, setRows] = useState<AuditEntry[]>([])
   useEffect(() => {
     if (open) api.auditLog(500).then(setRows).catch(() => setRows([]))
   }, [open])
   return (
-    <Modal title="操作审计（本机）" open={open} onCancel={onClose} footer={null} width={960}>
+    <Modal title={t('Audit log (this machine)')} open={open} onCancel={onClose} footer={null} width={980}>
       <Table
         size="small"
         rowKey={(r) => r.time + r.action}
         dataSource={rows}
         pagination={{ pageSize: 15 }}
         columns={[
-          { title: '时间', dataIndex: 'time', width: 170, render: (t) => new Date(t).toLocaleString() },
-          { title: '实例', dataIndex: 'name', render: (n, r) => <Space>{n}<EnvTag env={r.env} /></Space> },
-          { title: '操作', dataIndex: 'action', render: (a) => <Tag>{a}</Tag> },
-          { title: '详情', dataIndex: 'detail', render: (d) => <span className="mono cell-ellipsis" style={{ maxWidth: 300 }}>{JSON.stringify(d)}</span> },
-          { title: '结果', dataIndex: 'error', render: (e) => (e ? <Tag color="red" title={e}>失败</Tag> : <Tag color="green">成功</Tag>) },
+          { title: t('Time'), dataIndex: 'time', width: 170, render: (v) => fmtTime(new Date(v).getTime()) },
+          { title: t('Instance'), dataIndex: 'name', render: (n, r) => <Space>{n}<EnvTag env={r.env} /></Space> },
+          { title: t('Action'), dataIndex: 'action', render: (a) => <Tag bordered={false}>{a}</Tag> },
+          { title: t('Details'), dataIndex: 'detail', render: (d) => <span className="mono cell-ellipsis" style={{ maxWidth: 320 }}>{JSON.stringify(d)}</span> },
+          { title: t('Result'), dataIndex: 'error', render: (e) => (e ? <Tag color="error" title={e}>{t('Failed')}</Tag> : <Tag color="success">{t('OK')}</Tag>) },
         ]}
       />
     </Modal>
   )
 }
 
-export function AboutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [version, setVersion] = useState('')
+export function AboutModal({ open, version, onClose }: { open: boolean; version: string; onClose: () => void }) {
+  const t = useT()
   const [matrix, setMatrix] = useState<Record<string, Matrix>>({})
   useEffect(() => {
-    if (!open) return
-    api.version().then(setVersion).catch(() => {})
-    api.compatMatrix().then(setMatrix).catch(() => {})
+    if (open) api.compatMatrix().then(setMatrix).catch(() => {})
   }, [open])
   return (
-    <Modal title="关于 MidDeck" open={open} onCancel={onClose} footer={null} width={720}>
+    <Modal title={t('About MidDeck')} open={open} onCancel={onClose} footer={null} width={760}>
       <Typography.Paragraph>
-        版本 <Tag>{version}</Tag> · <a href="https://github.com/YunMuZhe/MidDeck" target="_blank" rel="noreferrer">GitHub</a>
+        {t('Version')} <Tag bordered={false}>{version}</Tag> · <a href="https://github.com/YunMuZhe/MidDeck" target="_blank" rel="noreferrer">GitHub</a>
       </Typography.Paragraph>
-      <Typography.Title level={5}>版本支持矩阵</Typography.Title>
-      {Object.entries(matrix).map(([k, m]) => (
-        <Descriptions key={k} size="small" bordered column={1} title={m.product} style={{ marginBottom: 16 }}>
-          <Descriptions.Item label="CI 实测">{m.tested.map((v) => <Tag color="green" key={v}>{v}</Tag>)}</Descriptions.Item>
-          <Descriptions.Item label="完整支持">≥ {m.supportedMin}</Descriptions.Item>
-          <Descriptions.Item label="部分支持">≥ {m.partialMin}</Descriptions.Item>
-          <Descriptions.Item label="版本相关功能">
-            {m.features.filter((f) => f.min !== '0').map((f) => <Tag key={f.key}>{f.label} ≥ {f.min}</Tag>)}
-          </Descriptions.Item>
-        </Descriptions>
-      ))}
+      <Typography.Title level={5}>{t('Version support')}</Typography.Title>
+      <Table
+        size="small"
+        pagination={false}
+        rowKey="product"
+        dataSource={Object.values(matrix)}
+        columns={[
+          { title: t('Product'), dataIndex: 'product' },
+          { title: t('Tested in CI'), dataIndex: 'tested', render: (v: string[]) => v.map((x) => <Tag color="success" bordered={false} key={x}>{x}</Tag>) },
+          { title: t('Supported'), dataIndex: 'supportedMin', render: (v) => `≥ ${v}` },
+          { title: t('Partial'), dataIndex: 'partialMin', render: (v) => `≥ ${v}` },
+        ]}
+        expandable={{
+          expandedRowRender: (m: Matrix) => (
+            <Space wrap>
+              {m.features.filter((f) => f.min !== '0').map((f) => <Tag key={f.key} bordered={false}>{f.label} ≥ {f.min}</Tag>)}
+            </Space>
+          ),
+        }}
+      />
     </Modal>
   )
 }

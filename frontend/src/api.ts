@@ -19,6 +19,7 @@ function call<T>(method: string, ...args: unknown[]): Promise<T> {
 
 export const api = {
   version: () => call<string>('Version'),
+  setLanguage: (l: string) => call<void>('SetLanguage', l),
   listInstances: () => call<Instance[] | null>('ListInstances').then((x) => x ?? []),
   getInstance: (id: string) => call<Instance>('GetInstance', id),
   saveInstance: (i: Instance) => call<Instance>('SaveInstance', i),

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
+
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -91,16 +93,16 @@ func (s *Store) Export(ids []string, passphrase string) ([]byte, error) {
 func DecodeBundle(data []byte, passphrase string) ([]Instance, error) {
 	var b Bundle
 	if err := json.Unmarshal(data, &b); err != nil {
-		return nil, fmt.Errorf("not a MidDeck bundle: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("share.notBundle"), err)
 	}
 	if b.Format != "middeck-bundle" {
-		return nil, errors.New("not a MidDeck bundle")
+		return nil, errors.New(i18n.T("share.notBundle"))
 	}
 	if !b.Encrypted {
 		return b.Instances, nil
 	}
 	if passphrase == "" {
-		return nil, errors.New("this bundle is encrypted, a passphrase is required")
+		return nil, errors.New(i18n.T("share.needPass"))
 	}
 	gcm, err := newGCM(passphrase, b.Salt)
 	if err != nil {
@@ -108,7 +110,7 @@ func DecodeBundle(data []byte, passphrase string) ([]Instance, error) {
 	}
 	plain, err := gcm.Open(nil, b.Nonce, b.Ciphertext, []byte(b.Format))
 	if err != nil {
-		return nil, errors.New("wrong passphrase or corrupted bundle")
+		return nil, errors.New(i18n.T("share.wrongPass"))
 	}
 	var list []Instance
 	if err := json.Unmarshal(plain, &list); err != nil {
@@ -134,7 +136,7 @@ func (s *Store) Import(data []byte, passphrase string, policy ConflictPolicy) (I
 			res.Overwritten++
 		case policy == ConflictCopy:
 			in.ID = ""
-			in.Name += " (imported)"
+			in.Name += i18n.T("share.imported")
 			res.Added++
 		default:
 			res.Skipped++

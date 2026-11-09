@@ -31,8 +31,8 @@ type Proxy struct {
 
 // Network describes how MidDeck reaches the middleware.
 type Network struct {
-	Proxy  Proxy    `json:"proxy"`
-	SSH    []SSHHop `json:"ssh"`
+	Proxy Proxy    `json:"proxy"`
+	SSH   []SSHHop `json:"ssh"`
 	// AddrMap rewrites addresses before dialing, e.g. Kafka advertised listeners
 	// "10.0.0.5:9092" -> "kafka-1.internal:9092".
 	AddrMap map[string]string `json:"addrMap,omitempty"`

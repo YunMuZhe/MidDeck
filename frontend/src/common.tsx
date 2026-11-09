@@ -1,16 +1,34 @@
-import { useState } from 'react'
-import { Alert, Input, List, Modal, Space, Tag, Typography } from 'antd'
-import { CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled, MinusCircleFilled } from '@ant-design/icons'
-import type { CompatResult, Instance, Report } from './types'
+import type { ReactNode } from 'react'
+import dayjs from 'dayjs'
+import { Alert, App, Input, Space, Tag, Tooltip, Typography } from 'antd'
+import { CheckCircleFilled, CloseCircleFilled, CopyOutlined, ExclamationCircleFilled, MinusCircleFilled } from '@ant-design/icons'
+import { useSettings, useT } from './settings'
+import { kindColor, kindGlyph, kindLabel } from './theme'
+import type { CompatResult, Instance, Kind, Report } from './types'
 
-export const kindLabel: Record<string, string> = { kafka: 'Kafka', redis: 'Redis', rabbitmq: 'RabbitMQ' }
-export const kindColor: Record<string, string> = { kafka: 'geekblue', redis: 'red', rabbitmq: 'orange' }
+export { kindLabel }
 
-export const envColor = (env: string) =>
-  ({ prod: 'red', production: 'red', staging: 'orange', test: 'blue', dev: 'green' })[env] ?? 'default'
+const envClass = (env: string) =>
+  ({ prod: 'prod', production: 'prod', staging: 'staging', test: 'test', dev: 'dev' })[env] ?? 'other'
+
+export const isProd = (env: string) => env === 'prod' || env === 'production'
 
 export function EnvTag({ env }: { env: string }) {
-  return <Tag color={envColor(env)}>{env || 'default'}</Tag>
+  return <span className={`env-pill ${envClass(env)}`}>{env || 'default'}</span>
+}
+
+export function KindIcon({ kind, size = 20 }: { kind: Kind; size?: number }) {
+  const { dark } = useSettings()
+  const glyph = kindGlyph[kind] ?? '?'
+  return (
+    <span
+      className="kind-icon"
+      title={kindLabel[kind]}
+      style={{ width: size, height: size, background: kindColor(kind, dark), fontSize: size * (glyph.length > 1 ? 0.42 : 0.55), borderRadius: size * 0.28 }}
+    >
+      {glyph}
+    </span>
+  )
 }
 
 const statusIcon = {
@@ -21,115 +39,142 @@ const statusIcon = {
 }
 
 export function DiagReport({ report }: { report?: Report | null }) {
+  const t = useT()
   if (!report) return null
+  const warns = report.steps.filter((s) => s.status === 'warn').length
   return (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space direction="vertical" style={{ width: '100%' }} size={10}>
       <Alert
-        type={report.ok ? (report.steps.some((s) => s.status === 'warn') ? 'warning' : 'success') : 'error'}
-        message={report.ok ? '连接测试通过' : '连接测试失败'}
+        type={report.ok ? (warns ? 'warning' : 'success') : 'error'}
         showIcon
+        message={report.ok ? (warns ? t('Connected with {n} warning(s)', { n: warns }) : t('All checks passed')) : t('Connection failed')}
       />
-      <List
-        size="small"
-        bordered
-        dataSource={report.steps}
-        renderItem={(s) => (
-          <List.Item>
-            <Space direction="vertical" size={0} style={{ width: '100%' }}>
-              <Space>
-                {statusIcon[s.status]}
-                <Typography.Text strong>{s.name}</Typography.Text>
-                {s.durationMs > 0 && <Typography.Text type="secondary">{s.durationMs}ms</Typography.Text>}
-              </Space>
-              {s.detail && <Typography.Text type="secondary" style={{ paddingLeft: 22 }}>{s.detail}</Typography.Text>}
-              {s.hint && <Typography.Text type="warning" style={{ paddingLeft: 22 }}>💡 {s.hint}</Typography.Text>}
-            </Space>
-          </List.Item>
-        )}
-      />
+      <div>
+        {report.steps.map((s, i) => (
+          <div className="diag-step" key={i}>
+            <span className="ic">{statusIcon[s.status]}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div>
+                <span className="nm">{s.name}</span>
+                {s.durationMs > 0 && <span className="ms">{s.durationMs} ms</span>}
+              </div>
+              {s.detail && <div className="dt selectable">{s.detail}</div>}
+              {s.hint && <div className="hint">{s.hint}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
     </Space>
   )
 }
 
-const levelTag: Record<string, [string, string]> = {
-  tested: ['green', '已实测'],
-  supported: ['blue', '支持'],
-  partial: ['gold', '部分支持'],
-  unsupported: ['red', '不支持'],
-  unknown: ['default', '版本未知'],
-}
+const levelColor: Record<string, string> = { tested: 'success', supported: 'processing', partial: 'warning', unsupported: 'error', unknown: 'default' }
+const levelText: Record<string, string> = { tested: 'Tested', supported: 'Supported', partial: 'Partial', unsupported: 'Unsupported', unknown: 'Unknown version' }
 
 export function CompatBadge({ c }: { c?: CompatResult }) {
+  const t = useT()
   if (!c) return null
-  const [color, label] = levelTag[c.level] ?? levelTag.unknown
+  const tip = (
+    <div>
+      <div>{c.message}</div>
+      {!!c.unavailable?.length && <div style={{ marginTop: 6 }}>{t('Unavailable')}: {c.unavailable.join(', ')}</div>}
+    </div>
+  )
   return (
-    <Tag color={color} title={c.message + (c.unavailable?.length ? '\n不可用：' + c.unavailable.join('、') : '')}>
-      {c.product} {c.version || '?'} · {label}
-    </Tag>
+    <Tooltip title={tip}>
+      <Tag color={levelColor[c.level]} bordered={false} style={{ marginInlineEnd: 0 }}>
+        {c.product} {c.version || '?'} · {t(levelText[c.level] ?? 'Unknown version')}
+      </Tag>
+    </Tooltip>
   )
 }
 
 /**
- * Confirms a dangerous operation. On production instances the user must type the
- * resource name, similar to deleting a GitHub repository.
+ * Confirms a destructive operation. On production instances the user must type
+ * the resource name, like deleting a GitHub repository.
  */
 export function useDangerConfirm(inst: Instance) {
-  const [modal, ctx] = Modal.useModal()
-  const confirm = (title: string, resource: string, onOk: () => Promise<unknown>) => {
-    const prod = inst.env === 'prod' || inst.env === 'production'
+  const { modal } = App.useApp()
+  const t = useT()
+  return (title: string, resource: string, onOk: () => Promise<unknown>) => {
+    const prod = isProd(inst.env)
     let typed = ''
     modal.confirm({
       title,
       okType: 'danger',
-      okText: '确认执行',
+      okText: t('Confirm'),
+      cancelText: t('Cancel'),
       width: 480,
       content: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Typography.Text>
-            实例：<b>{inst.name}</b> <EnvTag env={inst.env} />
-          </Typography.Text>
-          <Typography.Text>
-            对象：<Typography.Text code>{resource}</Typography.Text>
-          </Typography.Text>
+        <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
+          <Space size={6}>
+            <span className="muted">{t('Instance')}</span> <b>{inst.name}</b> <EnvTag env={inst.env} />
+          </Space>
+          <Space size={6}>
+            <span className="muted">{t('Target')}</span> <Typography.Text code>{resource}</Typography.Text>
+          </Space>
           {prod && (
             <>
-              <Alert type="error" showIcon message="这是生产环境，请输入对象名称确认" />
+              <Alert type="error" showIcon message={t('This is production. Type the name to confirm.')} style={{ marginTop: 6 }} />
               <Input placeholder={resource} onChange={(e) => (typed = e.target.value)} />
             </>
           )}
         </Space>
       ),
-      onOk: () => {
-        if (prod && typed !== resource) {
-          return Promise.reject(new Error('名称不匹配'))
-        }
-        return onOk()
-      },
+      onOk: () => (prod && typed !== resource ? Promise.reject(new Error('name mismatch')) : onOk()),
     })
   }
-  return { confirm, ctx }
 }
 
 export function CopyCommand({ cmd }: { cmd: string }) {
+  const t = useT()
+  const { message } = App.useApp()
   return (
-    <Alert
-      type="info"
-      message="等价命令"
-      description={
-        <Typography.Paragraph copyable={{ text: cmd }} className="mono" style={{ marginBottom: 0 }}>
-          {cmd}
-        </Typography.Paragraph>
-      }
-    />
+    <div className="code-block" style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+        <span className="muted" style={{ fontSize: 12 }}>{t('Equivalent CLI command')}</span>
+        <CopyOutlined
+          style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--md-text-3)' }}
+          onClick={() => navigator.clipboard.writeText(cmd).then(() => message.success(t('Copied')))}
+        />
+      </div>
+      <pre className="mono">{cmd}</pre>
+    </div>
   )
 }
 
-export function useToggle(init = false): [boolean, () => void, (v: boolean) => void] {
-  const [v, set] = useState(init)
-  return [v, () => set((x) => !x), set]
+export interface TileProps {
+  label: string
+  value: ReactNode
+  note?: ReactNode
+  icon?: ReactNode
 }
 
-export const fmtTime = (ms: number) => (ms ? new Date(ms).toLocaleString() : '-')
+/** Stat tiles: values in primary ink; status is carried by an icon + label, never color alone. */
+export function Tiles({ items }: { items: TileProps[] }) {
+  return (
+    <div className="tiles">
+      {items.map((it) => (
+        <div className="tile" key={it.label}>
+          <div className="tile-label">{it.icon}{it.label}</div>
+          <div className="tile-value">{it.value}</div>
+          {it.note && <div className="tile-note">{it.note}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export const num = (n: number | undefined) => (n === undefined || Number.isNaN(n) ? '-' : n.toLocaleString())
+
+export const fmtTime = (ms: number) => (ms ? dayjs(ms).format('YYYY-MM-DD HH:mm:ss') : '-')
+
+export const fmtBytes = (b: number) => {
+  if (!b) return '0 B'
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1)
+  return `${(b / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`
+}
 
 export const prettyJSON = (s: string) => {
   const t = s.trim()

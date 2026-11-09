@@ -1,27 +1,36 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, App, Button, Drawer, Result, Space, Spin, Tag, Typography } from 'antd'
-import { DeleteOutlined, DisconnectOutlined, EditOutlined, LockOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, App, Button, Drawer, Dropdown, Result, Space, Spin, Tooltip } from 'antd'
+import {
+  ApiOutlined, DeleteOutlined, EditOutlined, LockOutlined, MedicineBoxOutlined, MoreOutlined, ReloadOutlined, RightOutlined,
+} from '@ant-design/icons'
 import { api, errMsg } from './api'
-import { CompatBadge, DiagReport, EnvTag, kindColor, kindLabel, useDangerConfirm } from './common'
+import { CompatBadge, DiagReport, EnvTag, isProd, KindIcon, useDangerConfirm } from './common'
 import KafkaView from './kafka/KafkaView'
 import RedisView from './redis/RedisView'
 import RabbitView from './rabbitmq/RabbitView'
+import { useT } from './settings'
+import { kindLabel } from './theme'
 import type { ConnectResult, Instance, Report } from './types'
 
 interface Props {
   inst: Instance
   onEdit: () => void
   onDeleted: () => void
+  onConnected: (on: boolean) => void
 }
 
-export default function InstanceView({ inst, onEdit, onDeleted }: Props) {
+export default function InstanceView({ inst, onEdit, onDeleted, onConnected }: Props) {
   const { message } = App.useApp()
+  const t = useT()
   const [state, setState] = useState<'connecting' | 'ok' | 'fail'>('connecting')
   const [conn, setConn] = useState<ConnectResult | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [error, setError] = useState('')
   const [showReport, setShowReport] = useState(false)
-  const { confirm, ctx } = useDangerConfirm(inst)
+  const [diagnosing, setDiagnosing] = useState(false)
+  const confirm = useDangerConfirm(inst)
+  const onConnectedRef = useRef(onConnected)
+  onConnectedRef.current = onConnected
 
   const connect = useCallback(async (fresh = false) => {
     setState('connecting')
@@ -32,9 +41,11 @@ export default function InstanceView({ inst, onEdit, onDeleted }: Props) {
       setConn(r)
       if (r.report) setReport(r.report)
       setState('ok')
+      onConnectedRef.current(true)
     } catch (e) {
       setError(errMsg(e))
       setState('fail')
+      onConnectedRef.current(false)
     }
   }, [inst.id])
 
@@ -42,81 +53,98 @@ export default function InstanceView({ inst, onEdit, onDeleted }: Props) {
     connect()
   }, [connect])
 
-  // Connect() returns the report on failure via a rejected promise without data,
-  // so run a diagnostic test to show the user what went wrong.
   const diagnose = async () => {
     setShowReport(true)
-    setReport(null)
+    setDiagnosing(true)
     try {
       setReport(await api.testConnection(await api.getInstance(inst.id)))
     } catch (e) {
       message.error(errMsg(e))
+    } finally {
+      setDiagnosing(false)
     }
   }
 
-  const prod = inst.env === 'prod' || inst.env === 'production'
+  const prod = isProd(inst.env)
   const compat = conn?.info.compat
+  const warnCompat = compat && ['partial', 'unsupported', 'unknown'].includes(compat.level)
+  const hops = inst.network?.ssh?.length ?? 0
 
   return (
-    <div className={prod ? 'env-prod' : undefined} style={{ minHeight: '100%' }}>
-      {ctx}
-      <div style={{ padding: '14px 20px 0' }}>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-          <Space wrap>
-            <Typography.Title level={4} style={{ margin: 0 }}>{inst.name}</Typography.Title>
-            <Tag color={kindColor[inst.kind]}>{kindLabel[inst.kind]}</Tag>
-            <EnvTag env={inst.env} />
-            {inst.readOnly && <Tag icon={<LockOutlined />}>只读</Tag>}
-            {(inst.network?.ssh?.length ?? 0) > 0 && <Tag>SSH × {inst.network.ssh.length}</Tag>}
-            {state === 'ok' && <CompatBadge c={compat} />}
+    <div style={{ minHeight: '100%' }}>
+      {prod && <div className="prod-bar" />}
+      <div className="inst-head drag">
+        <div className="crumbs">
+          <span>{inst.project || t('Ungrouped')}</span>
+          <RightOutlined style={{ fontSize: 9 }} />
+          <EnvTag env={inst.env} />
+        </div>
+        <div className="inst-title">
+          <KindIcon kind={inst.kind} size={34} />
+          <h1>{inst.name}</h1>
+          {inst.readOnly && <Tooltip title={t('Write operations are refused')}><span className="env-pill other"><LockOutlined /> {t('Read-only')}</span></Tooltip>}
+          {state === 'ok' && <CompatBadge c={compat} />}
+          <div style={{ flex: 1 }} />
+          <Space className="no-drag">
+            <Button icon={<MedicineBoxOutlined />} onClick={() => (report ? setShowReport(true) : diagnose())}>{t('Diagnostics')}</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => connect(true)}>{t('Reconnect')}</Button>
+            <Button icon={<EditOutlined />} onClick={onEdit}>{t('Edit')}</Button>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [{ key: 'del', danger: true, icon: <DeleteOutlined />, label: t('Delete connection') }],
+                onClick: () =>
+                  confirm(t('Delete connection'), inst.name, async () => {
+                    await api.deleteInstance(inst.id)
+                    onDeleted()
+                  }),
+              }}
+            >
+              <Button icon={<MoreOutlined />} />
+            </Dropdown>
           </Space>
-          <Space>
-            <Button size="small" icon={<ReloadOutlined />} onClick={() => connect(true)}>重连</Button>
-            <Button size="small" onClick={() => (report ? setShowReport(true) : diagnose())}>诊断报告</Button>
-            <Button size="small" icon={<EditOutlined />} onClick={onEdit}>编辑</Button>
-            <Button
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() =>
-                confirm('删除连接配置', inst.name, async () => {
-                  await api.deleteInstance(inst.id)
-                  onDeleted()
-                })
-              }
-            />
-          </Space>
-        </Space>
-        <Typography.Text type="secondary" className="mono">
-          {(inst.addrs ?? []).join(', ') || inst.mgmtUrl}
-        </Typography.Text>
-        {state === 'ok' && compat && ['partial', 'unsupported', 'unknown'].includes(compat.level) && (
+        </div>
+        <div className="inst-sub">
+          <span>{kindLabel[inst.kind]}</span>
+          <span className="mono selectable">{(inst.addrs ?? []).join(', ') || inst.mgmtUrl}</span>
+          {hops > 0 && (
+            <span>
+              <ApiOutlined /> {t('via {n} SSH hop(s)', { n: hops })}: {inst.network.ssh.map((h) => h.host).join(' → ')}
+            </span>
+          )}
+        </div>
+        {state === 'ok' && compat && warnCompat && (
           <Alert
-            style={{ marginTop: 10 }}
+            style={{ marginTop: 14 }}
             type={compat.level === 'unsupported' ? 'error' : 'warning'}
             showIcon
-            message={compat.message}
-            description={compat.unavailable?.length ? '不可用功能：' + compat.unavailable.join('、') : undefined}
             closable
+            message={compat.message}
+            description={compat.unavailable?.length ? `${t('Unavailable')}: ${compat.unavailable.join(', ')}` : undefined}
           />
         )}
-        {state === 'ok' && compat?.unavailable?.length && !['partial', 'unsupported', 'unknown'].includes(compat.level) ? (
-          <Alert style={{ marginTop: 10 }} type="info" showIcon closable message={'当前版本不可用：' + compat.unavailable.join('、')} />
-        ) : null}
+        {state === 'ok' && compat && !warnCompat && !!compat.unavailable?.length && (
+          <Alert style={{ marginTop: 14 }} type="info" showIcon closable message={`${t('Not available on this version')}: ${compat.unavailable.join(', ')}`} />
+        )}
       </div>
 
-      <div style={{ padding: '0 20px 20px' }}>
-        {state === 'connecting' && <Spin tip="连接中…" style={{ display: 'block', marginTop: 120 }}><div /></Spin>}
+      <div className="main-inner">
+        {state === 'connecting' && (
+          <div style={{ padding: '120px 0', textAlign: 'center' }}>
+            <Spin />
+            <div className="muted" style={{ marginTop: 12 }}>{hops ? t('Opening SSH tunnel and connecting…') : t('Connecting…')}</div>
+          </div>
+        )}
         {state === 'fail' && (
           <Result
             status="warning"
-            title="连接失败"
+            title={t('Could not connect')}
             subTitle={error}
             extra={
               <Space>
-                <Button type="primary" onClick={diagnose}>查看诊断报告</Button>
-                <Button onClick={() => connect(true)}>重试</Button>
-                <Button onClick={onEdit}>修改配置</Button>
+                <Button type="primary" onClick={diagnose}>{t('Run diagnostics')}</Button>
+                <Button onClick={() => connect(true)}>{t('Retry')}</Button>
+                <Button onClick={onEdit}>{t('Edit settings')}</Button>
               </Space>
             }
           />
@@ -126,9 +154,21 @@ export default function InstanceView({ inst, onEdit, onDeleted }: Props) {
         {state === 'ok' && inst.kind === 'rabbitmq' && <RabbitView inst={inst} />}
       </div>
 
-      <Drawer title="连接诊断报告" width={600} open={showReport} onClose={() => setShowReport(false)}
-        extra={<Button size="small" icon={<DisconnectOutlined />} onClick={diagnose}>重新检测</Button>}>
-        {report ? <DiagReport report={report} /> : <Spin tip="正在检测…"><div style={{ height: 80 }} /></Spin>}
+      <Drawer
+        title={t('Connection diagnostics')}
+        width={620}
+        open={showReport}
+        onClose={() => setShowReport(false)}
+        extra={<Button size="small" icon={<ReloadOutlined />} loading={diagnosing} onClick={diagnose}>{t('Run again')}</Button>}
+      >
+        {diagnosing ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin />
+            <div className="muted" style={{ marginTop: 12 }}>{t('Checking network → auth → version → permissions…')}</div>
+          </div>
+        ) : (
+          <DiagReport report={report} />
+        )}
       </Drawer>
     </div>
   )

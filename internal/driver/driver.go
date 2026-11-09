@@ -12,6 +12,7 @@ import (
 
 	"github.com/YunMuZhe/MidDeck/internal/compat"
 	"github.com/YunMuZhe/MidDeck/internal/config"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 )
 
 // DialFunc dials an address (usually through a tunnel.Dialer).
@@ -92,15 +93,15 @@ func NetHint(err error) string {
 	s := err.Error()
 	switch {
 	case contains(s, "no such host"):
-		return "DNS 解析失败：该域名可能只在内网可解析，可配置 SSH 跳板，或改用 IP。"
+		return i18n.T("hint.dns")
 	case contains(s, "refused"):
-		return "端口拒绝连接：确认服务端口和监听地址。"
+		return i18n.T("hint.refused")
 	case contains(s, "timeout"), contains(s, "deadline"):
-		return "连接超时：检查网络、VPN、安全组，或是否需要通过堡垒机访问。"
+		return i18n.T("hint.timeout")
 	case contains(s, "certificate"), contains(s, "x509"), contains(s, "tls"):
-		return "TLS 校验失败：配置 CA 证书，或在测试环境勾选“跳过证书校验”。"
+		return i18n.T("hint.tls")
 	case contains(s, "SASL"), contains(s, "auth"), contains(s, "NOAUTH"), contains(s, "WRONGPASS"), contains(s, "401"):
-		return "认证失败：检查用户名、密码和认证机制。"
+		return i18n.T("hint.auth")
 	}
 	return ""
 }

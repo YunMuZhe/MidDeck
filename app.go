@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/driver/kafka"
 	"github.com/YunMuZhe/MidDeck/internal/driver/rabbitmq"
 	"github.com/YunMuZhe/MidDeck/internal/driver/redis"
+	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/YunMuZhe/MidDeck/internal/tunnel"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -72,7 +74,7 @@ func (a *App) Version() string { return version }
 
 func (a *App) ListInstances() ([]config.Instance, error) {
 	if a.store == nil {
-		return nil, errors.New("配置存储不可用")
+		return nil, errors.New(i18n.T("err.storeUnavailable"))
 	}
 	return a.store.List(), nil
 }
@@ -99,9 +101,9 @@ func (a *App) ExportInstances(ids []string, passphrase string) (string, error) {
 		return "", err
 	}
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "导出连接配置",
+		Title:           i18n.T("dlg.exportTitle"),
 		DefaultFilename: fmt.Sprintf("middeck-%s.json", time.Now().Format("20060102")),
-		Filters:         []runtime.FileFilter{{DisplayName: "MidDeck bundle (*.json)", Pattern: "*.json"}},
+		Filters:         []runtime.FileFilter{{DisplayName: i18n.T("dlg.bundle"), Pattern: "*.json"}},
 	})
 	if err != nil || path == "" {
 		return "", err
@@ -112,8 +114,8 @@ func (a *App) ExportInstances(ids []string, passphrase string) (string, error) {
 // ImportInstances reads a bundle chosen by the user.
 func (a *App) ImportInstances(passphrase string, policy string) (config.ImportResult, error) {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:   "导入连接配置",
-		Filters: []runtime.FileFilter{{DisplayName: "MidDeck bundle (*.json)", Pattern: "*.json"}},
+		Title:   i18n.T("dlg.importTitle"),
+		Filters: []runtime.FileFilter{{DisplayName: i18n.T("dlg.bundle"), Pattern: "*.json"}},
 	})
 	if err != nil || path == "" {
 		return config.ImportResult{}, err
@@ -134,7 +136,7 @@ func (a *App) open(ctx context.Context, inst config.Instance) (*conn, *diag.Repo
 		return nil, rep.Finish()
 	}
 	if d.Direct() {
-		rep.Add(diag.Step{Name: "网络路径", Status: diag.OK, Detail: "直连（未配置代理或 SSH 跳板）"})
+		rep.Add(diag.Step{Name: i18n.T("step.network"), Status: diag.OK, Detail: i18n.T("step.direct")})
 	}
 	var (
 		s   driver.Session
@@ -148,8 +150,8 @@ func (a *App) open(ctx context.Context, inst config.Instance) (*conn, *diag.Repo
 	case config.KindRabbitMQ:
 		s, err = openAs(rabbitmq.Open(ctx, inst, d.DialContext, rep))
 	default:
-		err = fmt.Errorf("unknown kind %q", inst.Kind)
-		rep.Add(diag.Step{Name: "配置检查", Status: diag.Fail, Detail: err.Error()})
+		err = errors.New(i18n.T("err.unknownKind", inst.Kind))
+		rep.Add(diag.Step{Name: i18n.T("step.config"), Status: diag.Fail, Detail: err.Error()})
 	}
 	if err != nil {
 		d.Close()
@@ -158,16 +160,16 @@ func (a *App) open(ctx context.Context, inst config.Instance) (*conn, *diag.Repo
 	c := &conn{inst: inst, dialer: d, session: s}
 	if info, err := s.Info(ctx); err == nil {
 		c.info = info
-		st := diag.Step{Name: "版本兼容性", Status: diag.OK, Detail: info.Compat.Message}
+		st := diag.Step{Name: i18n.T("step.compat"), Status: diag.OK, Detail: info.Compat.Message}
 		switch info.Compat.Level {
 		case compat.Partial, compat.Unknown:
 			st.Status = diag.Warn
 		case compat.Unsupported:
 			st.Status = diag.Warn
-			st.Hint = "版本过旧，建议仅进行只读操作。"
+			st.Hint = i18n.T("compat.tooOldHint")
 		}
 		if len(info.Compat.Unavailable) > 0 {
-			st.Detail += "；不可用功能：" + joinComma(info.Compat.Unavailable)
+			st.Detail += i18n.T("compat.unavailable", strings.Join(info.Compat.Unavailable, ", "))
 		}
 		rep.Add(st)
 	}
@@ -236,7 +238,7 @@ func (a *App) Connect(id string) (ConnectResult, error) {
 	defer cancel()
 	c, rep := a.open(ctx, inst)
 	if c == nil {
-		return ConnectResult{Report: rep}, errors.New("连接失败，请查看诊断报告")
+		return ConnectResult{Report: rep}, errors.New(i18n.T("err.connectFailed"))
 	}
 	a.mu.Lock()
 	a.conns[id] = c
@@ -278,7 +280,7 @@ func sessionAs[T any](a *App, id string) (T, *conn, error) {
 	}
 	s, ok := c.session.(T)
 	if !ok {
-		return zero, nil, fmt.Errorf("实例 %s 不是该类型的中间件", c.inst.Name)
+		return zero, nil, errors.New(i18n.T("err.wrongKind", c.inst.Name))
 	}
 	return s, c, nil
 }
@@ -291,7 +293,7 @@ func (a *App) reqCtx() (context.Context, context.CancelFunc) {
 // attempt is written to the audit log.
 func (a *App) write(c *conn, action string, detail any, fn func() error) error {
 	if c.inst.ReadOnly {
-		return fmt.Errorf("实例 %s 为只读模式，已拒绝操作：%s", c.inst.Name, action)
+		return errors.New(i18n.T("err.readOnly", c.inst.Name, action))
 	}
 	err := fn()
 	a.audit(c.inst, action, detail, err)
@@ -344,8 +346,11 @@ func (a *App) AuditLog(n int) ([]AuditEntry, error) {
 	return out, nil
 }
 
-// CompatMatrix exposes the support matrix to the About page.
-func (a *App) CompatMatrix() map[string]compat.Matrix { return compat.Matrices }
+// CompatMatrix exposes the support matrix (with labels in the current language).
+func (a *App) CompatMatrix() map[string]compat.Matrix { return compat.Localized() }
+
+// SetLanguage switches backend messages between "en" and "zh".
+func (a *App) SetLanguage(lang string) { i18n.SetLang(lang) }
 
 func splitLines(b []byte) [][]byte {
 	var out [][]byte
@@ -362,15 +367,4 @@ func splitLines(b []byte) [][]byte {
 		out = append(out, b[start:])
 	}
 	return out
-}
-
-func joinComma(xs []string) string {
-	s := ""
-	for i, x := range xs {
-		if i > 0 {
-			s += "、"
-		}
-		s += x
-	}
-	return s
 }

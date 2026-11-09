@@ -56,6 +56,10 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - Peek messages (requeue mode), publish, purge, delete.
 - Export vhost definitions.
 
+### Interface
+- English / Chinese (English by default); light, dark or follow-system theme
+- Home overview and per-instance stat tiles (topics, lag, memory, ready messages…)
+
 ### Safety
 - Production instances are clearly marked; destructive actions require typing the resource name.
 - Per-instance **read-only mode**.
