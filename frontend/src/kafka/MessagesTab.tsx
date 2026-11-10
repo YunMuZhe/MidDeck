@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { App, Button, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography } from 'antd'
-import { ExportOutlined, MinusCircleOutlined, PlusOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons'
+import { Alert, App, Button, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { CodeOutlined, ExportOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { api, errMsg } from '../api'
 import { fmtBytes, fmtTime, prettyJSON } from '../common'
 import { useT } from '../settings'
-import type { ActionArgs, Instance, Message, Topic } from '../types'
+import type { ActionArgs, Instance, Message, ProtoTypes, Topic } from '../types'
 
 export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; topic?: { name: string; n: number }; prefill?: ActionArgs }) {
   const { message } = App.useApp()
@@ -15,6 +15,7 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
   const [msgs, setMsgs] = useState<Message[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [produceOpen, setProduceOpen] = useState(false)
+  const [decodeOpen, setDecodeOpen] = useState(false)
   const mode = Form.useWatch('mode', form)
   const curTopic = Form.useWatch('topic', form)
   const partitions = topics.find((x) => x.name === curTopic)?.partitions ?? 0
@@ -30,6 +31,7 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
       const r = await api.kafkaFetch(inst.id, {
         topic: v.topic, partition: v.partition ?? -1, mode: v.mode, offset: v.offset ?? 0,
         timestamp: v.time ? v.time.valueOf() : 0, limit: v.limit ?? 100, keyFilter: v.keyFilter ?? '', contains: v.contains ?? '',
+        decode: v.decode === 'raw' ? 'raw' : '',
       })
       setMsgs(r)
     } catch (e) {
@@ -64,7 +66,7 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
 
   return (
     <>
-      <Form form={form} initialValues={{ mode: 'newest', partition: -1, limit: 100 }}>
+      <Form form={form} initialValues={{ mode: 'newest', partition: -1, limit: 100, decode: '' }}>
         <div className="toolbar">
           <Form.Item name="topic" noStyle rules={[{ required: true, message: t('Choose a topic') }]}>
             <Select showSearch placeholder={t('Topic')} style={{ width: 240 }} options={topics.filter((x) => !x.internal).map((x) => ({ value: x.name }))} />
@@ -85,8 +87,12 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
         <div className="toolbar">
           <Form.Item name="keyFilter" noStyle><Input placeholder={t('Key equals')} allowClear style={{ width: 200 }} /></Form.Item>
           <Form.Item name="contains" noStyle><Input placeholder={t('Value contains')} allowClear style={{ width: 240 }} /></Form.Item>
+          <Form.Item name="decode" noStyle>
+            <Select style={{ width: 140 }} options={[{ value: '', label: t('Decoded') }, { value: 'raw', label: t('Raw bytes') }]} />
+          </Form.Item>
           <Button type="primary" icon={<SearchOutlined />} onClick={search} loading={loading}>{t('Search')}</Button>
           <div className="spacer" />
+          <Button icon={<CodeOutlined />} disabled={!curTopic} onClick={() => setDecodeOpen(true)}>{t('Decoding')}</Button>
           <Button icon={<ExportOutlined />} disabled={!msgs?.length} onClick={async () => {
             try {
               const p = await api.exportMessages(curTopic ?? 'messages', msgs ?? [])
@@ -107,6 +113,13 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
           expandRowByClick: true,
           expandedRowRender: (m) => (
             <Space direction="vertical" style={{ width: '100%' }}>
+              {m.decodeError && <Alert type="warning" showIcon message={t('Shown undecoded')} description={m.decodeError} />}
+              {(m.valueSchema || m.keySchema) && (
+                <div className="muted">
+                  {m.keySchema && <span style={{ marginRight: 16 }}>Key · {m.keySchema}</span>}
+                  {m.valueSchema && <span>Value · {m.valueSchema}</span>}
+                </div>
+              )}
               {!!m.headers?.length && <div>{m.headers.map((h) => <Tag key={h.key} bordered={false}>{h.key}: {h.value}</Tag>)}</div>}
               <div className="code-block">
                 <Typography.Paragraph copyable={{ text: m.value }} style={{ marginBottom: 0 }}>
@@ -120,11 +133,20 @@ export default function MessagesTab({ inst, topic, prefill }: { inst: Instance; 
           { title: t('Partition'), dataIndex: 'partition', width: 90 },
           { title: 'Offset', dataIndex: 'offset', width: 100 },
           { title: t('Time'), dataIndex: 'timestamp', width: 170, render: (x) => <span style={{ whiteSpace: 'nowrap' }}>{fmtTime(x)}</span> },
-          { title: 'Key', dataIndex: 'key', width: 170, render: (k) => <span className="mono cell-ellipsis" style={{ maxWidth: 160 }}>{k}</span> },
-          { title: 'Value', dataIndex: 'value', render: (v) => <span className="mono cell-ellipsis">{v}</span> },
+          { title: 'Key', dataIndex: 'key', width: 170, render: (k, m) => <span className="cell-flex"><FormatTag f={m.keyFormat} /><span className="mono cell-ellipsis" style={{ maxWidth: 160 }}>{k}</span></span> },
+          {
+            title: 'Value', dataIndex: 'value', render: (v, m) => (
+              <span className="cell-flex">
+                {m.decodeError && <Tooltip title={m.decodeError}><WarningOutlined style={{ color: '#f08c00' }} /></Tooltip>}
+                <FormatTag f={m.valueFormat} schema={m.valueSchema} />
+                <span className="mono cell-ellipsis">{v}</span>
+              </span>
+            ),
+          },
           { title: t('Size'), dataIndex: 'size', width: 90, align: 'right', render: fmtBytes },
         ]}
       />
+      {decodeOpen && curTopic && <DecodeModal inst={inst} topic={curTopic} onClose={() => setDecodeOpen(false)} onSaved={() => { setDecodeOpen(false); if (msgs) search() }} />}
       <ProduceModal inst={inst} topics={topics} defaultTopic={curTopic} open={produceOpen} onClose={() => setProduceOpen(false)} />
     </>
   )
@@ -186,4 +208,106 @@ function ProduceModal({ inst, topics, defaultTopic, open, onClose }: { inst: Ins
       </Form>
     </Modal>
   )
+}
+
+const formatLabel: Record<string, string> = { avro: 'Avro', protobuf: 'Protobuf', binary: 'base64' }
+
+/** Small tag saying how a key/value was decoded; plain text and JSON get none. */
+export function FormatTag({ f, schema }: { f?: string; schema?: string }) {
+  if (!f || !formatLabel[f]) return null
+  const tag = <Tag bordered={false} color={f === 'binary' ? 'default' : 'blue'} className="fmt-tag">{formatLabel[f]}</Tag>
+  return schema ? <Tooltip title={schema}>{tag}</Tooltip> : tag
+}
+
+/** Binds local Protobuf types to a topic (or topic pattern) for decoding. */
+function DecodeModal({ inst, topic, onClose, onSaved }: { inst: Instance; topic: string; onClose: () => void; onSaved: () => void }) {
+  const { message } = App.useApp()
+  const t = useT()
+  const [form] = Form.useForm()
+  const [info, setInfo] = useState<ProtoTypes | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const load = async (reload: boolean) => {
+    setLoading(true)
+    try {
+      const r = await api.kafkaProtoTypes(inst.id, reload)
+      setInfo(r)
+      if (!reload) {
+        const b = r.bindings.find((x) => x.topic === topic) ?? r.bindings.find((x) => x.topic.includes('*') && globMatch(x.topic, topic))
+        form.setFieldsValue({ pattern: b?.topic ?? topic, key: b?.key || undefined, value: b?.value || undefined })
+      }
+    } catch (e) {
+      message.error(errMsg(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => {
+    load(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inst.id, topic])
+
+  const save = async (clear = false) => {
+    const v = await form.validateFields()
+    setBusy(true)
+    try {
+      await api.kafkaSetProtoBinding(inst.id, { topic: v.pattern.trim(), key: clear ? '' : v.key ?? '', value: clear ? '' : v.value ?? '' })
+      message.success(t('Saved'))
+      onSaved()
+    } catch (e) {
+      message.error(errMsg(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const opts = (info?.types ?? []).map((x) => ({ value: x }))
+  const noFiles = info && !(info.paths ?? []).length
+  return (
+    <Modal
+      open
+      title={t('Decoding · {topic}', { topic })}
+      onCancel={onClose}
+      width={620}
+      footer={[
+        <Button key="clear" danger onClick={() => save(true)} disabled={busy}>{t('Remove binding')}</Button>,
+        <Button key="cancel" onClick={onClose}>{t('Cancel')}</Button>,
+        <Button key="ok" type="primary" loading={busy} onClick={() => save()} disabled={noFiles ?? true}>{t('Save')}</Button>,
+      ]}
+    >
+      <Typography.Paragraph type="secondary">
+        {info?.registry
+          ? t('Messages in the Schema Registry format are decoded automatically with {url}.', { url: info.registry })
+          : t('No Schema Registry is configured; registry-encoded messages stay raw. Add one in the connection settings under Decoding.')}
+      </Typography.Paragraph>
+      <Typography.Paragraph style={{ marginBottom: 12 }}>
+        {t('For plain Protobuf (no registry), choose the message types of this topic:')}
+      </Typography.Paragraph>
+      {noFiles && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t('No .proto files configured. Add files or directories in the connection settings under Decoding.')} />}
+      {!!info?.problems.length && (
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('Some .proto files did not compile')}
+          description={<div className="mono" style={{ maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: 12 }}>{info.problems.join('\n')}</div>} />
+      )}
+      <Form form={form} layout="vertical" requiredMark={false}>
+        <Form.Item name="pattern" label={t('Topic or pattern')} extra={t('Use * for families of topics, e.g. orders.*')} rules={[{ required: true, message: t('Required') }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="value" label={t('Value type')}>
+          <Select showSearch allowClear loading={loading} options={opts} placeholder="acme.orders.v1.Order" disabled={!!noFiles} />
+        </Form.Item>
+        <Form.Item name="key" label={t('Key type (usually empty: keys are often plain strings)')}>
+          <Select showSearch allowClear loading={loading} options={opts} disabled={!!noFiles} />
+        </Form.Item>
+      </Form>
+      <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => load(true)} disabled={!!noFiles}>
+        {t('Reload .proto files ({n} types)', { n: info?.types.length ?? 0 })}
+      </Button>
+    </Modal>
+  )
+}
+
+function globMatch(pattern: string, s: string) {
+  const re = new RegExp('^' + pattern.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$')
+  return re.test(s)
 }

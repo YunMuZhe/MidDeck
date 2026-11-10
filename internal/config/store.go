@@ -34,8 +34,16 @@ type fileFormat struct {
 	Bastions    []*Bastion  `json:"bastions,omitempty"`
 }
 
-// DefaultDir returns the per-user data directory for MidDeck.
+// FileSecrets makes new stores keep secrets in instances.json (mode 0600) instead
+// of the OS keychain. The headless build sets it: servers rarely run a Secret
+// Service. MIDDECK_SECRETS=file does the same for any build.
+var FileSecrets = false
+
+// DefaultDir returns the per-user data directory for MidDeck, or MIDDECK_DATA_DIR.
 func DefaultDir() (string, error) {
+	if d := os.Getenv("MIDDECK_DATA_DIR"); d != "" {
+		return d, nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -49,6 +57,7 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{path: filepath.Join(dir, "instances.json"), instances: map[string]*Instance{}, bastions: map[string]*Bastion{}}
+	s.fileSecrets = FileSecrets || os.Getenv("MIDDECK_SECRETS") == "file"
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -60,7 +69,7 @@ func Open(dir string) (*Store, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", s.path, err)
 	}
-	s.fileSecrets = f.FileSecrets
+	s.fileSecrets = s.fileSecrets || f.FileSecrets
 	for _, in := range f.Instances {
 		s.instances[in.ID] = in
 	}
@@ -168,7 +177,7 @@ func (s *Store) flush() error {
 // --- secrets -------------------------------------------------------------
 
 func secretKeys(in *Instance) []string {
-	keys := []string{in.ID + "/auth", in.ID + "/proxy"}
+	keys := []string{in.ID + "/auth", in.ID + "/proxy", in.ID + "/registry"}
 	for i := range in.Network.SSH {
 		keys = append(keys, fmt.Sprintf("%s/ssh/%d", in.ID, i))
 	}
@@ -189,6 +198,9 @@ func (s *Store) storeSecrets(in *Instance) error {
 	if err := set(in.ID+"/proxy", in.Network.Proxy.Secret); err != nil {
 		return err
 	}
+	if err := set(in.ID+"/registry", in.Registry.Password); err != nil {
+		return err
+	}
 	for i, h := range in.Network.SSH {
 		if h.BastionID != "" {
 			h.Secret = ""
@@ -207,6 +219,7 @@ func (s *Store) loadSecrets(in *Instance) {
 	}
 	in.Auth.Password = get(in.ID + "/auth")
 	in.Network.Proxy.Secret = get(in.ID + "/proxy")
+	in.Registry.Password = get(in.ID + "/registry")
 	for i := range in.Network.SSH {
 		in.Network.SSH[i].Secret = get(fmt.Sprintf("%s/ssh/%d", in.ID, i))
 	}
@@ -216,6 +229,7 @@ func stripSecrets(in Instance) Instance {
 	in = clone(in)
 	in.Auth.Password = ""
 	in.Network.Proxy.Secret = ""
+	in.Registry.Password = ""
 	for i := range in.Network.SSH {
 		in.Network.SSH[i].Secret = ""
 	}

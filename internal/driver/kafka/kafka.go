@@ -15,6 +15,7 @@ import (
 
 	"github.com/YunMuZhe/MidDeck/internal/compat"
 	"github.com/YunMuZhe/MidDeck/internal/config"
+	"github.com/YunMuZhe/MidDeck/internal/decode"
 	"github.com/YunMuZhe/MidDeck/internal/diag"
 	"github.com/YunMuZhe/MidDeck/internal/driver"
 	"github.com/YunMuZhe/MidDeck/internal/i18n"
@@ -34,6 +35,7 @@ type Session struct {
 	adm    *kadm.Client
 	mu     sync.Mutex
 	manual *kgo.Client // producer with manual partitioning
+	dec    *decode.Decoder
 }
 
 // Open creates the client and runs layered diagnostics into rep.
@@ -168,6 +170,22 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 	}
 	perm(i18n.T("kafka.permTopics"), func(c context.Context) error { _, err := s.adm.ListTopics(c); return err })
 	perm(i18n.T("kafka.permGroups"), func(c context.Context) error { _, err := s.adm.ListGroups(c); return err })
+
+	// 4. Message decoding. Problems here never fail the connection.
+	s.dec, err = decode.New(inst, decode.DialFunc(rawDial))
+	if err != nil {
+		rep.Add(diag.Step{Name: i18n.T("kafka.registry"), Status: diag.Warn, Detail: err.Error()})
+	} else if reg := s.dec.Registry(); reg != nil {
+		start := time.Now()
+		c, cancel := context.WithTimeout(ctx, 15*time.Second)
+		n, err := reg.Ping(c)
+		cancel()
+		st := diag.Step{Name: i18n.T("kafka.registry"), Status: diag.OK, Duration: time.Since(start).Milliseconds(), Detail: i18n.T("kafka.registryOK", reg.URL(), n)}
+		if err != nil {
+			st.Status, st.Detail, st.Hint = diag.Warn, err.Error(), i18n.T("kafka.registryHint")
+		}
+		rep.Add(st)
+	}
 	return s, nil
 }
 
@@ -187,6 +205,9 @@ func saslMechanism(a config.Auth) (sasl.Mechanism, error) {
 
 // Close releases the clients.
 func (s *Session) Close() {
+	if s.dec != nil {
+		s.dec.Close()
+	}
 	s.cl.Close()
 	s.mu.Lock()
 	if s.manual != nil {
@@ -403,14 +424,22 @@ type Header struct {
 	Value string `json:"value"`
 }
 
+// Message is a record rendered for display: Key and Value are decoded text, or
+// base64 when their format is "binary".
 type Message struct {
-	Partition int32    `json:"partition"`
-	Offset    int64    `json:"offset"`
-	Timestamp int64    `json:"timestamp"`
-	Key       string   `json:"key"`
-	Value     string   `json:"value"`
-	Headers   []Header `json:"headers"`
-	Size      int      `json:"size"`
+	Partition   int32    `json:"partition"`
+	Offset      int64    `json:"offset"`
+	Timestamp   int64    `json:"timestamp"`
+	Key         string   `json:"key"`
+	Value       string   `json:"value"`
+	Headers     []Header `json:"headers"`
+	Size        int      `json:"size"`
+	KeyFormat   string   `json:"keyFormat,omitempty"`
+	ValueFormat string   `json:"valueFormat,omitempty"`
+	KeySchema   string   `json:"keySchema,omitempty"`
+	ValueSchema string   `json:"valueSchema,omitempty"`
+	// DecodeError explains why a payload that looked schema-encoded is shown raw.
+	DecodeError string `json:"decodeError,omitempty"`
 }
 
 // FetchReq selects messages. Mode: newest | oldest | offset | timestamp.
@@ -423,6 +452,10 @@ type FetchReq struct {
 	Limit     int    `json:"limit"`     // total across partitions
 	KeyFilter string `json:"keyFilter"`
 	Contains  string `json:"contains"` // substring match on value
+	// Decode: "" (auto) or "raw" (no schema decoding).
+	Decode string `json:"decode,omitempty"`
+	// ProtoType decodes values as this local Protobuf type, overriding bindings.
+	ProtoType string `json:"protoType,omitempty"`
 }
 
 func (s *Session) Fetch(ctx context.Context, r FetchReq) ([]Message, error) {
@@ -502,6 +535,7 @@ func (s *Session) Fetch(ctx context.Context, r FetchReq) ([]Message, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	dopts := decode.Options{Raw: r.Decode == "raw", ProtoType: r.ProtoType}
 	var out []Message
 	scanned := 0
 	for len(remaining) > 0 && len(out) < r.Limit && scanned < r.Limit*200 {
@@ -526,13 +560,14 @@ func (s *Session) Fetch(ctx context.Context, r FetchReq) ([]Message, error) {
 			if len(out) >= r.Limit {
 				return
 			}
-			if r.KeyFilter != "" && string(rec.Key) != r.KeyFilter {
+			m := s.render(ctx, r.Topic, fromKgo(rec), dopts)
+			if r.KeyFilter != "" && string(rec.Key) != r.KeyFilter && m.Key != r.KeyFilter {
 				return
 			}
-			if r.Contains != "" && !strings.Contains(string(rec.Value), r.Contains) {
+			if r.Contains != "" && !strings.Contains(string(rec.Value), r.Contains) && !strings.Contains(m.Value, r.Contains) {
 				return
 			}
-			out = append(out, toMessage(rec))
+			out = append(out, m)
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -544,16 +579,40 @@ func (s *Session) Fetch(ctx context.Context, r FetchReq) ([]Message, error) {
 	return out, nil
 }
 
-func toMessage(rec *kgo.Record) Message {
-	m := Message{
-		Partition: rec.Partition, Offset: rec.Offset, Timestamp: rec.Timestamp.UnixMilli(),
-		Key: string(rec.Key), Value: string(rec.Value), Size: len(rec.Key) + len(rec.Value),
-	}
+func fromKgo(rec *kgo.Record) Record {
+	r := Record{Partition: rec.Partition, Offset: rec.Offset, Timestamp: rec.Timestamp.UnixMilli(), Key: rec.Key, Value: rec.Value}
 	for _, h := range rec.Headers {
+		r.Headers = append(r.Headers, RecordHeader{Key: h.Key, Value: h.Value})
+	}
+	return r
+}
+
+// render decodes a record for display with this session's decoder.
+func (s *Session) render(ctx context.Context, topic string, r Record, o decode.Options) Message {
+	return Render(ctx, s.dec, topic, r, o)
+}
+
+// Render decodes a record for display; dec may be nil (plain text / base64 only).
+// ProtoType applies to the value only.
+func Render(ctx context.Context, dec *decode.Decoder, topic string, r Record, o decode.Options) Message {
+	k := dec.Decode(ctx, topic, true, r.Key, decode.Options{Raw: o.Raw})
+	v := dec.Decode(ctx, topic, false, r.Value, decode.Options{Raw: o.Raw, ProtoType: o.ProtoType})
+	m := Message{
+		Partition: r.Partition, Offset: r.Offset, Timestamp: r.Timestamp, Size: len(r.Key) + len(r.Value),
+		Key: k.Text, KeyFormat: k.Format, KeySchema: k.Schema,
+		Value: v.Text, ValueFormat: v.Format, ValueSchema: v.Schema, DecodeError: v.Error,
+	}
+	if m.DecodeError == "" && k.Error != "" {
+		m.DecodeError = "key: " + k.Error
+	}
+	for _, h := range r.Headers {
 		m.Headers = append(m.Headers, Header{Key: h.Key, Value: string(h.Value)})
 	}
 	return m
 }
+
+// Decoder returns the session's message decoder.
+func (s *Session) Decoder() *decode.Decoder { return s.dec }
 
 type ProduceReq struct {
 	Topic     string   `json:"topic"`
@@ -591,7 +650,7 @@ func (s *Session) Produce(ctx context.Context, r ProduceReq) (Message, error) {
 	if err := res.FirstErr(); err != nil {
 		return Message{}, err
 	}
-	return toMessage(rec), nil
+	return s.render(ctx, r.Topic, fromKgo(rec), decode.Options{}), nil
 }
 
 // --- consumer groups --------------------------------------------------------

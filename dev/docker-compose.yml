@@ -4,9 +4,11 @@
 #   ./dev/seed.sh
 #
 # Direct access from the host:  Kafka localhost:9092 · Redis localhost:6379 ·
-#                               RabbitMQ localhost:5672 / http://localhost:15672 (guest/guest)
+#                               RabbitMQ localhost:5672 / http://localhost:15672 (guest/guest) ·
+#                               Schema Registry http://localhost:8081
 # Through the SSH jump host (ops / middeck @ localhost:2222):
-#                               Kafka kafka:19092 · Redis redis:6379 — these names only
+#                               Kafka kafka:19092 · Redis redis:6379 ·
+#                               Schema Registry http://schema-registry:8081 — these names only
 #                               resolve inside the Docker network, like a real intranet.
 name: middeck-dev
 
@@ -27,6 +29,15 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.9.0
+    ports: ["8081:8081"]
+    depends_on: [kafka]
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:19092
 
   redis:
     image: redis:7.4-alpine

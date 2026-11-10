@@ -68,15 +68,6 @@ type Record struct {
 	Headers   []RecordHeader `json:"headers,omitempty"`
 }
 
-// Message renders the record for display.
-func (r Record) Message() Message {
-	m := Message{Partition: r.Partition, Offset: r.Offset, Timestamp: r.Timestamp, Key: string(r.Key), Value: string(r.Value), Size: len(r.Key) + len(r.Value)}
-	for _, h := range r.Headers {
-		m.Headers = append(m.Headers, Header{Key: h.Key, Value: string(h.Value)})
-	}
-	return m
-}
-
 // Range is a half-open offset range [From, To) in one partition.
 type Range struct {
 	Partition int32 `json:"partition"`

@@ -34,7 +34,7 @@ var Tools = []Tool{
 		Description: "Open an existing instance, optionally on a tab. Use this when the user only wants to find or go to an instance.",
 		Properties: map[string]any{
 			"instance_id": instanceID,
-			"tab":         enum("tab to open. kafka: topics|messages|groups; redis: keys|console|info; rabbitmq: queues|exchanges", "topics", "messages", "groups", "keys", "console", "info", "queues", "exchanges"),
+			"tab":         enum("tab to open. kafka: topics|messages|groups|parked|schemas; redis: keys|console|info; rabbitmq: queues|exchanges", "topics", "messages", "groups", "parked", "schemas", "keys", "console", "info", "queues", "exchanges"),
 		},
 		Required: []string{"instance_id"},
 	},
@@ -140,6 +140,18 @@ var Tools = []Tool{
 			"payload":     str("message body"),
 		},
 		Required: []string{"instance_id", "routing_key"},
+	},
+	{
+		Name: "changeset_draft",
+		Description: "Draft a YAML changeset and open it in the Changeset dialog of a Kafka or RabbitMQ instance, where the user plans and applies it. " +
+			"Use this when the request covers several resources at once (several topics; an exchange with its queues and bindings; a dead-letter setup), " +
+			"asks for a changeset / YAML, or should be repeatable across environments. For one topic or one queue, prefer the create form.",
+		Properties: map[string]any{
+			"instance_id": instanceID,
+			"yaml":        str("the complete changeset YAML, following the changeset format"),
+			"summary":     str("one sentence on what the changeset does, in the user's language"),
+		},
+		Required: []string{"instance_id", "yaml"},
 	},
 	{
 		Name:        "reply",

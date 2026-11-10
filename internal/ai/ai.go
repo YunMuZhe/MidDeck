@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YunMuZhe/MidDeck/internal/changeset"
 	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/zalando/go-keyring"
 )
@@ -147,7 +148,10 @@ Rules:
 - If the user does not name an instance and one is open (currentInstance), use it when its kind fits.
 - Only fill values the user stated or that follow directly from them (e.g. "7 days" retention = 604800000 ms). Leave everything else out.
 - Never include passwords or secrets.
-- Write any message in the language the user wrote in.`
+- Write any message in the language the user wrote in.
+
+Changeset format, for the changeset_draft tool:
+` + "\n" + changeset.Reference
 
 // Plan asks the configured model for one action.
 func Plan(ctx context.Context, s Settings, wc Context, prompt string) (Action, error) {
@@ -191,6 +195,18 @@ func validate(a Action, wc Context) error {
 	}
 	if id, ok := a.Args["instance_id"].(string); ok && !known(id) {
 		return errors.New(i18n.T("ai.unknownInstance", id))
+	}
+	if a.Name == "changeset_draft" {
+		// A draft that does not parse would only fail later in the dialog.
+		text, _ := a.Args["yaml"].(string)
+		if _, err := changeset.Parse([]byte(text)); err != nil {
+			return fmt.Errorf("%s: %w", i18n.T("ai.badChangeset"), err)
+		}
+		for _, in := range wc.Instances {
+			if in.ID == a.Args["instance_id"] && in.Kind == "redis" {
+				return errors.New(i18n.T("changeset.unsupported", in.Kind))
+			}
+		}
 	}
 	if id, ok := a.Args["bastion_id"].(string); ok && id != "" {
 		found := false

@@ -35,6 +35,10 @@ gen payment-callback 300
 gen inventory-changed 1500
 gen user-signup 60
 
+echo "Kafka: Avro / Protobuf messages (Schema Registry + plain Protobuf)"
+until curl -sf http://localhost:8081/subjects >/dev/null; do sleep 2; done
+(cd .. && go run ./dev/seeddecode)
+
 echo "Kafka: consumer groups"
 reset() { $K/kafka-consumer-groups.sh --bootstrap-server kafka:19092 --group "$1" --topic "$2" --reset-offsets "${@:3}" --execute >/dev/null; }
 reset order-service-consumer order-created --to-offset 90      # ~260 lag

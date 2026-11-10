@@ -4,7 +4,7 @@ import {
   ApiOutlined, DeleteOutlined, DiffOutlined, EditOutlined, LockOutlined, MedicineBoxOutlined, MoreOutlined, ReloadOutlined, RightOutlined,
 } from '@ant-design/icons'
 import { api, errMsg } from './api'
-import { ChangesetModal } from './Changeset'
+import { ChangesetModal, type ChangesetDraft } from './Changeset'
 import { CompatBadge, DiagReport, EnvTag, isProd, KindIcon, useDangerConfirm } from './common'
 import KafkaView from './kafka/KafkaView'
 import RedisView from './redis/RedisView'
@@ -33,6 +33,15 @@ export default function InstanceView({ inst, instances, onEdit, onDeleted, onCon
   const [showReport, setShowReport] = useState(false)
   const [diagnosing, setDiagnosing] = useState(false)
   const [changeset, setChangeset] = useState(false)
+  const [draft, setDraft] = useState<ChangesetDraft | null>(null)
+
+  // The assistant's changeset draft opens the editor; planning and applying stay with the user.
+  useEffect(() => {
+    if (intent?.action !== 'changeset_draft') return
+    setDraft({ seq: intent.seq, text: String(intent.args.yaml ?? '') })
+    setChangeset(true)
+    onIntentDone()
+  }, [intent]) // eslint-disable-line react-hooks/exhaustive-deps
   const confirm = useDangerConfirm(inst)
   const onConnectedRef = useRef(onConnected)
   onConnectedRef.current = onConnected
@@ -170,7 +179,7 @@ export default function InstanceView({ inst, instances, onEdit, onDeleted, onCon
         {state === 'ok' && inst.kind === 'rabbitmq' && <RabbitView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
       </div>
 
-      {inst.kind !== 'redis' && <ChangesetModal inst={inst} instances={instances} open={changeset} onClose={() => setChangeset(false)} />}
+      {inst.kind !== 'redis' && <ChangesetModal inst={inst} instances={instances} open={changeset} onClose={() => setChangeset(false)} draft={draft} />}
       <Drawer
         title={t('Connection diagnostics')}
         width={620}

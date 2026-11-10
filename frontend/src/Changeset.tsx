@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, App, AutoComplete, Button, Checkbox, Dropdown, Empty, Input, Modal, Space, Spin, Tag, Tooltip, Typography } from 'antd'
-import { CheckCircleFilled, CloseCircleFilled, CloudDownloadOutlined, DownOutlined, FolderOpenOutlined, MinusCircleFilled, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { Alert, App, AutoComplete, Button, Checkbox, Dropdown, Empty, Form, Input, Modal, Space, Spin, Tag, Tooltip, Typography } from 'antd'
+import { CheckCircleFilled, CloseCircleFilled, BookOutlined, CloudDownloadOutlined, DownOutlined, FolderOpenOutlined, MinusCircleFilled, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { api, errMsg } from './api'
 import { CopyCommand, EnvTag, isProd } from './common'
 import { useT } from './settings'
-import type { Change, ChangeResult, Instance, Plan } from './types'
+import type { Change, ChangeResult, Instance, LibraryFile, Plan } from './types'
 
 const templates: Record<string, string> = {
   kafka: `# MidDeck changeset: describe topics once, plan and apply them to any cluster.
@@ -59,8 +59,11 @@ rabbitmq:
 const actionColor: Record<string, string> = { create: 'green', update: 'blue', delete: 'red', conflict: 'orange' }
 const sign: Record<string, string> = { create: '+', update: '~', delete: '−', conflict: '!' }
 
+/** A changeset handed over by the AI assistant; seq changes for every new draft. */
+export interface ChangesetDraft { seq: number; text: string }
+
 /** YAML changeset editor: load / export, plan against this instance, apply. */
-export function ChangesetModal({ inst, instances, open, onClose }: { inst: Instance; instances: Instance[]; open: boolean; onClose: () => void }) {
+export function ChangesetModal({ inst, instances, open, onClose, draft }: { inst: Instance; instances: Instance[]; open: boolean; onClose: () => void; draft?: ChangesetDraft | null }) {
   const { message, modal } = App.useApp()
   const t = useT()
   const [text, setText] = useState('')
@@ -69,10 +72,18 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
   const [plan, setPlan] = useState<Plan | null>(null)
   const [planned, setPlanned] = useState('') // text + env the plan was made from
   const [results, setResults] = useState<ChangeResult[] | null>(null)
-  const [busy, setBusy] = useState<'' | 'plan' | 'apply' | 'load'>('')
+  const [busy, setBusy] = useState<'' | 'plan' | 'apply' | 'load' | 'save'>('')
   const [error, setError] = useState('')
   const [allowDelete, setAllowDelete] = useState(false)
   const [cli, setCli] = useState('MidDeck')
+  const [library, setLibrary] = useState<LibraryFile[]>([])
+  const [saveAs, setSaveAs] = useState<string | null>(null) // file name being saved
+  const [origin, setOrigin] = useState<string | null>(null) // library file the text came from
+  const [fromAI, setFromAI] = useState(false)
+
+  const loadLibrary = () => {
+    api.changesetLibrary().then(setLibrary).catch(() => {})
+  }
 
   useEffect(() => {
     if (!open) return
@@ -82,7 +93,18 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
     setError('')
     setText((x) => x || templates[inst.kind] || '')
     api.mcpInfo().then((i) => setCli(i.command)).catch(() => {})
+    loadLibrary()
   }, [open, inst])
+
+  useEffect(() => {
+    if (!draft) return
+    setText(draft.text)
+    setFile(null)
+    setOrigin(null)
+    setPlan(null)
+    setResults(null)
+    setFromAI(true)
+  }, [draft?.seq]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stale = !!plan && planned !== env + '\n' + text
   const peers = instances.filter((i) => i.kind === inst.kind && i.id !== inst.id)
@@ -156,8 +178,68 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
       if (!f.path) return
       setText(f.content)
       setFile({ path: f.path, name: f.name })
+      setOrigin(null)
+      setFromAI(false)
       setPlan(null)
     })
+
+  const openLibrary = (name: string) =>
+    run('load', async () => {
+      setText(await api.changesetLibraryRead(name))
+      setFile(null)
+      setOrigin(name)
+      setFromAI(false)
+      setPlan(null)
+    })
+
+  const saveLibrary = async (overwrite: boolean) => {
+    if (!saveAs) return
+    const name = /\.ya?ml$/.test(saveAs.trim()) ? saveAs.trim() : saveAs.trim() + '.yaml'
+    const same = origin === name
+    if (!overwrite && !same && library.some((f) => f.name === name)) {
+      modal.confirm({ title: t('{name} already exists. Replace it?', { name }), okText: t('Replace'), cancelText: t('Cancel'), onOk: () => saveLibrary(true) })
+      return
+    }
+    setBusy('save')
+    try {
+      setOrigin(await api.changesetLibrarySave(name, text, overwrite || same))
+      setFile(null)
+      setSaveAs(null)
+      message.success(t('Saved to the library'))
+    } catch (e) {
+      message.error(errMsg(e))
+    } finally {
+      setBusy('')
+      loadLibrary()
+    }
+  }
+
+  const removeLibrary = (f: LibraryFile) =>
+    modal.confirm({
+      title: t('Delete {name}?', { name: f.name }),
+      okType: 'danger', okText: t('Delete'), cancelText: t('Cancel'),
+      onOk: async () => {
+        try {
+          await api.changesetLibraryDelete(f.name)
+          if (origin === f.name) setOrigin(null)
+        } catch (e) {
+          message.error(errMsg(e))
+        }
+        loadLibrary()
+      },
+    })
+
+  const libraryItems = library.map((f) => ({
+      key: f.name,
+      label: (
+        <div className="lib-item">
+          <span className="mono">{f.name}</span>
+          <span className="spacer" />
+          <span className="muted">{new Date(f.modified).toLocaleDateString()}</span>
+          <a className="lib-del" onClick={(e) => { e.stopPropagation(); removeLibrary(f) }}>{t('Delete')}</a>
+        </div>
+      ),
+    }))
 
   const save = async (as: boolean) => {
     try {
@@ -176,6 +258,8 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
       const y = await api.changesetExport(id)
       setText(y)
       setFile(null)
+      setOrigin(null)
+      setFromAI(false)
       setPlan(null)
     })
 
@@ -201,6 +285,24 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
             <Button size="small" icon={<SaveOutlined />} onClick={() => save(false)} disabled={!text}>{t('Save')}</Button>
             <Dropdown
               trigger={['click']}
+              onOpenChange={(o) => o && loadLibrary()}
+              menu={{
+                className: 'lib-menu',
+                onClick: ({ key }) => {
+                  if (key === '$save') setSaveAs(origin ?? file?.name ?? `${inst.name}-changeset.yaml`)
+                  else openLibrary(key)
+                },
+                items: [
+                  { key: '$save', icon: <SaveOutlined />, label: t('Save to library…'), disabled: !text.trim() },
+                  { type: 'divider' as const },
+                  ...(libraryItems.length ? libraryItems : [{ key: '$empty', disabled: true, label: <span className="muted">{t('No saved changesets yet. AI tools (MCP) save their drafts here too.')}</span> }]),
+                ],
+              }}
+            >
+              <Button size="small" icon={<BookOutlined />}>{t('Library')} <DownOutlined /></Button>
+            </Dropdown>
+            <Dropdown
+              trigger={['click']}
               menu={{
                 onClick: ({ key }) => load(key),
                 items: [
@@ -214,8 +316,9 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
               <Button size="small" icon={<CloudDownloadOutlined />} loading={busy === 'load'}>{t('Load from a connection…')} <DownOutlined /></Button>
             </Dropdown>
             <div className="spacer" />
-            <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }} ellipsis>{file?.name ?? t('unsaved')}</Typography.Text>
+            <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }} ellipsis>{origin ? `${t('Library')} · ${origin}` : file?.name ?? t('unsaved')}</Typography.Text>
           </div>
+          {fromAI && <Alert type="info" showIcon closable onClose={() => setFromAI(false)} style={{ marginBottom: 8 }} message={t('Drafted by the AI assistant. Read it, then Plan to see exactly what would change. Nothing runs until you apply.')} />}
           <Input.TextArea
             className="mono changeset-text"
             value={text}
@@ -258,6 +361,25 @@ export function ChangesetModal({ inst, instances, open, onClose }: { inst: Insta
           </div>
         </div>
       </div>
+      <Modal
+        title={t('Save to library')}
+        open={!!saveAs}
+        onCancel={() => setSaveAs(null)}
+        onOk={() => saveLibrary(false)}
+        okText={t('Save')}
+        cancelText={t('Cancel')}
+        confirmLoading={busy === 'save'}
+        okButtonProps={{ disabled: !saveAs?.trim() }}
+        width={480}
+      >
+        {saveAs !== null && (
+          <Form layout="vertical" style={{ marginTop: 12 }}>
+            <Form.Item label={t('File name')} extra={t('Saved on this computer, in MidDeck\'s data folder.')} style={{ marginBottom: 0 }}>
+              <Input className="mono" value={saveAs} onChange={(e) => setSaveAs(e.target.value)} />
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
     </Modal>
   )
 }

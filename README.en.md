@@ -43,6 +43,7 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 ### Kafka
 - Topics: list, details (partitions / ISR / offsets / configs), create, delete, add partitions, alter configs.
 - Messages: newest / oldest / from offset / from timestamp, key and content filters, JSON pretty print, JSONL export, produce with headers and explicit partition.
+- **Message decoding**: Schema Registry (Confluent wire format) Avro / Protobuf / JSON Schema messages are decoded to JSON automatically, references included. Plain Protobuf topics decode with local `.proto` files bound per topic; other binary payloads show as base64. Filters, skip previews, parked messages and MCP all see the decoded text. The registry is reached through the same jump hosts / proxy as Kafka, and has a read-only schema browser.
 - Consumer groups: lag overview and per-partition detail, **offset reset with a dry-run preview**, delete.
 - **Skip & replay**: save the messages a group is stuck on, move its offsets past them, and replay them after the fix, to the original topic, a retry topic or another cluster. Every replayed message carries `x-middeck-replay` and related headers.
 
@@ -67,11 +68,28 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - One sentence finds the instance and opens the right form, prefilled: "create topic order-refund on the prod orders Kafka, 12 partitions, keep 7 days".
 - **Anthropic** (default `claude-opus-5-5`) or any **OpenAI-compatible** endpoint (OpenAI, DeepSeek, Qwen, Ollama…).
 - **Prefill only**: nothing runs until you confirm in the form. The model sees names, projects, environments, tags, aliases and descriptions, never passwords.
+- It can also **draft changeset YAML**, opened in the changeset editor for you to plan and apply.
 
 ### MCP server
 - `MidDeck mcp` serves your connections to Claude Code and Cursor: topics, consumer lag, messages, Redis keys, RabbitMQ queues.
-- Reuses saved connections, jump hosts and keychain credentials. **Read-only**; changes stay in the app.
+- Reuses saved connections, jump hosts and keychain credentials. It **never changes your middleware**; changes stay in the app.
+- Exports, writes and dry-runs changeset YAML and saves it to the changeset library, for a person to plan and apply in MidDeck.
+- **Manage connections** too: `instance_create / update / delete` and `bastion_*`; secrets are never returned.
 - Setup: Settings (bottom left) → "Use in Claude Code / Cursor (MCP)", or see [docs/MCP.md](docs/MCP.md).
+
+### Linux servers (headless)
+- One static binary (amd64 / arm64) with **no desktop, GTK or WebKit** needed, for any distribution: `middeck mcp`.
+- **Loads connections from a Git repository** (e.g. self-hosted GitLab): `middeck mcp --repo <url>` clones it at start and pulls every 5 minutes; connections removed from the repository are removed here, ones added on the server are kept.
+- Passwords stay out of the repository: set them on the server through MCP; they are kept in a local 0600 file.
+- Use it from your laptop over SSH: `claude mcp add middeck -- ssh -T ops@server middeck mcp --repo …`. See [docs/SERVER.md](docs/SERVER.md).
+
+### Team collaboration
+- Connect a Git repository to **sync connections and jump hosts** (no passwords) with your team: publishing commits and pushes, teammates pull and import.
+- See [docs/TEAM.md](docs/TEAM.md).
+
+### Patrol alerts
+- Watch **Kafka consumer lag**, **RabbitMQ dead-letter queue growth** and **big Redis keys** locally; get a system notification over the threshold and again on recovery.
+- Checks only read; Redis is sampled in batches with `MEMORY USAGE`. See [docs/ALERTS.md](docs/ALERTS.md).
 
 ### Interface
 - English / Chinese (English by default); light, dark or follow-system theme
@@ -91,7 +109,9 @@ Download from [Releases](https://github.com/YunMuZhe/MidDeck/releases):
 |---|---|
 | macOS (Intel + Apple Silicon) | `MidDeck-*-macos-universal.dmg` |
 | Windows x64 / ARM64 | `MidDeck-*-windows-*-setup.exe`, or the portable `*-portable.exe` |
+| Windows, offline (e.g. bastion hosts) | `MidDeck-*-windows-*-offline.zip`: bundles the WebView2 runtime; unzip and run `MidDeck.exe`, no install or internet needed |
 | Linux x64 | `MidDeck-*-linux-amd64.tar.gz` (requires `libwebkit2gtk-4.1`) |
+| Linux server (headless: MCP + CLI) | `MidDeck-*-linux-amd64-headless.tar.gz` / `*-linux-arm64-headless.tar.gz`, see [docs/SERVER.md](docs/SERVER.md) |
 
 > Builds are not code-signed yet. See [docs/INSTALL.md](docs/INSTALL.md) for getting past the macOS / Windows warning.
 
@@ -104,6 +124,12 @@ Download from [Releases](https://github.com/YunMuZhe/MidDeck/releases):
 - [x] **AI assistant**: OpenAI-compatible and Anthropic APIs; locate an instance from one sentence and prefill the form (it only prefills, a human confirms)
 - [x] MCP server for Claude Code / Cursor
 - [x] Shared jump hosts
+- [x] **Message decoding**: Schema Registry (Avro / Protobuf / JSON Schema) and local .proto files
+- [x] **Changesets from AI / MCP**: they draft the YAML, a person plans and applies
+- [x] **Team collaboration**: sync connection settings through a Git repository
+- [x] **Patrol alerts**: consumer lag, dead-letter queues, big Redis keys, system notifications
+- [x] **Headless Linux build**: run the MCP server on a server, connections loaded from Git, connection CRUD over MCP
+- [ ] Skip & replay for RabbitMQ dead letters
 - [ ] Agent mode for bastions that forbid port forwarding
 - [ ] More middleware: RocketMQ, Pulsar, Elasticsearch, ZooKeeper, Nacos
 

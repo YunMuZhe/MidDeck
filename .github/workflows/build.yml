@@ -1,7 +1,7 @@
 name: Build
 
 # Push to main / open a PR  -> build all platforms, packages kept as workflow artifacts (7 days)
-# Push a tag like v0.1.0     -> build all platforms and publish a GitHub Release
+# Push a tag like v0.1.0     -> build all platforms (plus headless Linux servers) and publish a GitHub Release
 on:
   push:
     branches: [main]
@@ -32,6 +32,9 @@ jobs:
         run: |
           go vet ./internal/...
           go test ./internal/...
+          # The main package needs frontend/dist only for the GUI; the headless build checks it without.
+          go vet -tags headless .
+          go test -tags headless .
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -187,6 +190,44 @@ jobs:
             echo "::warning::NSIS installer not found, shipping the portable exe only. build tree: $(find build -iname '*.exe' | tr '\n' ' ')"
           fi
 
+      # Offline package: the portable exe plus a WebView2 Fixed Version runtime in
+      # webview2\ next to it (picked up by webview_windows.go), for machines that
+      # have no WebView2 and no internet, e.g. bastion hosts. Microsoft publishes the
+      # runtime only as links embedded in its download page, so we scrape the newest.
+      - name: Package offline (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arch = if ('${{ matrix.platform }}' -eq 'windows/arm64') { 'arm64' } else { 'x64' }
+          $v = '${{ steps.ver.outputs.version }}'
+          try {
+            $html = (Invoke-WebRequest -UseBasicParsing 'https://developer.microsoft.com/en-us/microsoft-edge/webview2/').Content -replace '\\u002F', '/'
+            $pattern = 'msedge\.sf\.dl\.delivery\.mp\.microsoft\.com/filestreamingservice/files/[0-9a-fA-F-]+/Microsoft\.WebView2\.FixedVersionRuntime\.([\d.]+)\.' + $arch + '\.cab'
+            $best = [regex]::Matches($html, $pattern) | Sort-Object { [version]$_.Groups[1].Value } -Descending | Select-Object -First 1
+            if (-not $best) { throw "no Fixed Version $arch runtime link found on the WebView2 download page" }
+            $wv = $best.Groups[1].Value
+            Write-Host "WebView2 Fixed Version $wv ($arch)"
+            Invoke-WebRequest -UseBasicParsing "https://$($best.Value)" -OutFile wv2.cab
+            New-Item -ItemType Directory -Force wv2x | Out-Null
+            expand.exe wv2.cab -F:* wv2x | Out-Null
+            $exe = Get-ChildItem wv2x -Recurse -Filter msedgewebview2.exe | Select-Object -First 1
+            if (-not $exe) { throw 'msedgewebview2.exe missing from the extracted runtime' }
+            $src = $exe.Directory
+
+            $stage = 'offline\MidDeck'
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item "dist\MidDeck-$v-${{ matrix.name }}-portable.exe" "$stage\MidDeck.exe"
+            Move-Item $src.FullName "$stage\webview2"
+            "WebView2 Fixed Version Runtime $wv ($arch)`r`nRun MidDeck.exe; no installation or internet needed." | Out-File -Encoding utf8 "$stage\README.txt"
+            7z a -tzip -mx=7 "dist\MidDeck-$v-${{ matrix.name }}-offline.zip" .\offline\MidDeck | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+          } catch {
+            # A release must not silently lose the offline package; other builds just warn.
+            if ('${{ github.ref }}'.StartsWith('refs/tags/v')) { throw }
+            Write-Host "::warning::offline package skipped: $_"
+          }
+
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -199,9 +240,37 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  # The MCP server and changeset CLI for Linux servers: no window, no GTK / WebKit,
+  # a static binary (CGO off) that runs on any distribution.
+  headless:
+    needs: [test, integration]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="$GITHUB_REF_NAME"; else V="dev-${GITHUB_SHA::7}"; fi
+          echo "V=$V" >> "$GITHUB_ENV"
+          mkdir -p out/MidDeck dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -tags headless -trimpath \
+            -ldflags "-s -w -X main.version=$V" -o out/MidDeck/MidDeck .
+          cp docs/SERVER.md out/MidDeck/README.md
+          tar -C out -czf "dist/MidDeck-$V-linux-${{ matrix.arch }}-headless.tar.gz" MidDeck
+      - uses: actions/upload-artifact@v6
+        with:
+          name: MidDeck-linux-${{ matrix.arch }}-headless
+          path: dist/*
+          retention-days: 7
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, headless]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v6

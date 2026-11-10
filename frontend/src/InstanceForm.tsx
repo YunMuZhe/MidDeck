@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   App, AutoComplete, Button, Checkbox, Col, Divider, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Space, Tabs, Tag, Typography,
 } from 'antd'
-import { ApiOutlined, CloudServerOutlined, DeleteOutlined, EditOutlined, LockOutlined, PlusOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { ApiOutlined, CodeOutlined, CloudServerOutlined, DeleteOutlined, EditOutlined, LockOutlined, PlusOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { api, errMsg } from './api'
 import { BastionForm, hopSummary } from './Bastions'
 import { DiagReport, KindIcon } from './common'
@@ -23,6 +23,8 @@ type FormValues = Omit<Instance, 'network'> & {
 
 const toForm = (i: Instance): FormValues => ({
   ...i,
+  registry: { url: '', username: '', password: '', insecureSkipVerify: false, ...i.registry },
+  proto: { paths: i.proto?.paths ?? [], bindings: i.proto?.bindings ?? [] },
   network: {
     proxy: i.network.proxy ?? { type: '', addr: '' },
     ssh: (i.network.ssh ?? []).map((h) => ({ ...h, bastionId: h.bastionId ?? '' })),
@@ -44,6 +46,9 @@ const fromForm = (v: FormValues, base: Instance): Instance => {
     addrs: v.addrs ?? [],
     auth: { ...base.auth, ...v.auth },
     tls: { ...base.tls, ...v.tls },
+    registry: { ...base.registry, ...v.registry, url: (v.registry?.url ?? '').trim() },
+    // Bindings are edited from the Messages tab; keep them.
+    proto: { bindings: base.proto?.bindings ?? [], paths: (v.proto?.paths ?? []).map((p) => p.trim()).filter(Boolean) },
     network: {
       proxy: v.network.proxy ?? { type: '', addr: '' },
       ssh: (v.network.ssh ?? []).map((h) => (h.bastionId ? ({ bastionId: h.bastionId } as SSHHop) : { ...h, bastionId: undefined })),
@@ -243,6 +248,47 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
     </>
   )
 
+  const regUrl = Form.useWatch(['registry', 'url'], form)
+  const decoding = (
+    <>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        {t('Decode binary messages into readable JSON. Schema Registry is used automatically for messages in the Confluent wire format; plain Protobuf topics use local .proto files bound per topic from the Messages tab.')}
+      </Typography.Paragraph>
+      <Divider orientation="left" plain>Schema Registry</Divider>
+      <Form.Item
+        name={['registry', 'url']}
+        label={t('Registry URL')}
+        extra={t('Confluent Schema Registry or a compatible API (Karapace, Redpanda, Apicurio ccompat). Reached through this connection\'s proxy / SSH hops.')}
+        rules={[{ pattern: /^\s*(https?:\/\/\S+)?\s*$/, message: t('Must start with http:// or https://') }]}
+      >
+        <Input placeholder="http://schema-registry:8081" autoComplete="off" />
+      </Form.Item>
+      {!!regUrl?.trim() && (
+        <>
+          <Row gutter={12}>
+            <Col span={12}><Form.Item name={['registry', 'username']} label={t('Username / API key')}><Input autoComplete="off" /></Form.Item></Col>
+            <Col span={12}>
+              <Form.Item name={['registry', 'password']} label={t('Password / API secret')} tooltip={t('Stored in the system keychain')}>
+                <Input.Password autoComplete="new-password" placeholder={keepHint} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name={['registry', 'insecureSkipVerify']} valuePropName="checked">
+            <Checkbox>{t('Skip certificate verification (test only)')}</Checkbox>
+          </Form.Item>
+        </>
+      )}
+      <Divider orientation="left" plain>{t('Protobuf files')}</Divider>
+      <Form.Item
+        name={['proto', 'paths']}
+        label={t('.proto files or directories')}
+        extra={t('Directories are searched recursively and used as import roots. Press Enter to add more.')}
+      >
+        <Select mode="tags" open={false} suffixIcon={null} placeholder="~/work/acme-protos" tokenSeparators={[',']} />
+      </Form.Item>
+    </>
+  )
+
   const network = (
     <>
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
@@ -378,6 +424,7 @@ export default function InstanceForm({ open, initial, projects, onClose, onSaved
             { key: 'basic', label: <span><ProfileOutlined /> {t('General')}</span>, children: general, forceRender: true },
             { key: 'auth', label: <span><LockOutlined /> {t('Auth & TLS')}</span>, children: auth, forceRender: true },
             { key: 'net', label: <span><ApiOutlined /> {t('Network')}{hops ? ` · ${hops} SSH` : ''}</span>, children: network, forceRender: true },
+            ...(kind === 'kafka' ? [{ key: 'decode', label: <span><CodeOutlined /> {t('Decoding')}</span>, children: decoding, forceRender: true }] : []),
           ]}
         />
       </Form>

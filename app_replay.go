@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YunMuZhe/MidDeck/internal/config"
+	"github.com/YunMuZhe/MidDeck/internal/decode"
 	"github.com/YunMuZhe/MidDeck/internal/driver/kafka"
 	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/YunMuZhe/MidDeck/internal/park"
@@ -56,7 +57,7 @@ func (a *App) KafkaSkipPreview(id string, r kafka.SkipReq) (SkipPreview, error) 
 		if i == previewLimit {
 			break
 		}
-		p.Messages = append(p.Messages, truncated(rec.Message()))
+		p.Messages = append(p.Messages, truncated(kafka.Render(ctx, s.Decoder(), r.Topic, rec, decode.Options{})))
 	}
 	return p, nil
 }
@@ -125,13 +126,29 @@ func (a *App) ParkedMessages(batchID string, limit int) ([]kafka.Message, error)
 	if limit <= 0 || limit > 1000 {
 		limit = 500
 	}
-	recs, err := a.parked().Records(batchID, limit)
+	st := a.parked()
+	b, err := st.Get(batchID)
 	if err != nil {
 		return nil, err
 	}
+	recs, err := st.Records(batchID, limit)
+	if err != nil {
+		return nil, err
+	}
+	// Decode with the source connection's schemas when it is open; never connect just for this.
+	var dec *decode.Decoder
+	a.mu.Lock()
+	if c, ok := a.conns[b.InstanceID]; ok {
+		if s, ok := c.session.(*kafka.Session); ok {
+			dec = s.Decoder()
+		}
+	}
+	a.mu.Unlock()
+	ctx, cancel := a.reqCtx()
+	defer cancel()
 	out := make([]kafka.Message, 0, len(recs))
 	for _, r := range recs {
-		out = append(out, truncated(r.Message()))
+		out = append(out, truncated(kafka.Render(ctx, dec, b.Topic, r, decode.Options{})))
 	}
 	return out, nil
 }

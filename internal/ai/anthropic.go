@@ -57,7 +57,7 @@ func planAnthropic(ctx context.Context, hc *http.Client, s Settings, user string
 
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(s.Model),
-		MaxTokens: 4096,
+		MaxTokens: 8192,
 		System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
 		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(user))},
 		Tools:     tools,

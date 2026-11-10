@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/YunMuZhe/MidDeck/internal/config"
 )
@@ -36,17 +38,26 @@ func main() {
 	}
 	fmt.Printf("saved jump host %-12s %s\n", jump.Name, jump.ID)
 	bastion := []config.SSHHop{{BastionID: jump.ID}}
+	// Run from the repository root; dev/protos holds the playground's .proto files.
+	wd, _ := os.Getwd()
+	protos := config.Proto{
+		Paths:    []string{filepath.Join(wd, "dev", "protos")},
+		Bindings: []config.ProtoBinding{{Topic: "shipment-pb", Value: "acme.logistics.Shipment"}},
+	}
 
 	want := []config.Instance{
 		{
 			Name: "Local Kafka", Kind: config.KindKafka, Project: "playground", Env: "dev",
 			Addrs: []string{"localhost:9092"}, Tags: []string{"docker"}, Description: "Kafka 3.9 from dev/docker-compose.yml",
+			Registry: config.Registry{URL: "http://localhost:8081"}, Proto: protos,
 		},
 		{
 			Name: "Orders Kafka", Kind: config.KindKafka, Project: "order-service", Env: "prod",
 			Addrs: []string{"kafka:19092"}, Aliases: []string{"订单 Kafka", "order-kafka"}, Tags: []string{"core"},
 			Description: "Reached through the SSH bastion; kafka:19092 only resolves inside the Docker network.",
 			Network:     config.Network{SSH: bastion},
+			// Resolved on the far side of the bastion, like the brokers.
+			Registry: config.Registry{URL: "http://schema-registry:8081"}, Proto: protos,
 		},
 		{
 			Name: "Session Cache", Kind: config.KindRedis, Project: "order-service", Env: "test",

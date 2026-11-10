@@ -100,6 +100,35 @@ type Instance struct {
 	Auth    Auth    `json:"auth"`
 	TLS     TLS     `json:"tls"`
 	Network Network `json:"network"`
+
+	// Kafka message decoding.
+	Registry Registry `json:"registry"`
+	Proto    Proto    `json:"proto"`
+}
+
+// Registry is a Confluent-compatible Schema Registry (Confluent, Karapace, Apicurio's
+// ccompat API, Redpanda). It is reached through the instance's tunnel.
+type Registry struct {
+	URL      string `json:"url,omitempty"`
+	Username string `json:"username,omitempty"`
+	// Kept in the OS keychain.
+	Password           string `json:"password,omitempty"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
+}
+
+// Proto decodes plain (registry-less) Protobuf messages with local .proto files.
+type Proto struct {
+	// Files or directories; directories are searched recursively and double as
+	// import roots.
+	Paths    []string       `json:"paths,omitempty"`
+	Bindings []ProtoBinding `json:"bindings,omitempty"`
+}
+
+// ProtoBinding maps a topic (exact name or glob such as "orders.*") to message types.
+type ProtoBinding struct {
+	Topic string `json:"topic"`
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // IsProd reports whether the instance should get production safeguards.

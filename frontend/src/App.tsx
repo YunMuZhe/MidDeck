@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Dropdown, Input, Segmented, Tooltip } from 'antd'
+import { App as AntApp, Badge, Button, Dropdown, Input, Segmented, Tooltip } from 'antd'
 import {
-  ApiOutlined, AuditOutlined, CaretDownOutlined, CaretRightOutlined, CloudServerOutlined, ExportOutlined, ImportOutlined, InfoCircleOutlined,
-  PlusOutlined, RobotOutlined, SearchOutlined, SettingOutlined,
+  ApiOutlined, AuditOutlined, BellOutlined, CaretDownOutlined, CaretRightOutlined, CloudServerOutlined, ExportOutlined, ImportOutlined, InfoCircleOutlined,
+  PlusOutlined, RobotOutlined, SearchOutlined, SettingOutlined, TeamOutlined,
 } from '@ant-design/icons'
 import logo from './assets/logo.png'
 import { api, errMsg } from './api'
@@ -13,6 +13,8 @@ import Home from './Home'
 import { AboutModal, AuditModal, ExportModal, ImportModal, MCPModal } from './Dialogs'
 import { BastionsModal } from './Bastions'
 import { AISettingsModal, AssistantModal } from './Assistant'
+import { TeamModal } from './Team'
+import { AlertsModal, useAlerts } from './Alerts'
 import { useSettings } from './settings'
 import { emptyInstance, type AIAction, type Instance, type Intent, type Kind, type SSHHop } from './types'
 
@@ -26,7 +28,7 @@ function matches(i: Instance, q: string) {
   return q.toLowerCase().split(/\s+/).every((t) => hay.includes(t))
 }
 
-type DialogName = 'import' | 'export' | 'audit' | 'about' | 'bastions' | 'assistant' | 'aiSettings' | 'mcp' | null
+type DialogName = 'import' | 'export' | 'audit' | 'about' | 'bastions' | 'assistant' | 'aiSettings' | 'mcp' | 'team' | 'alerts' | null
 
 const isMac = navigator.platform.toUpperCase().includes('MAC')
 
@@ -55,6 +57,7 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogName>(null)
   const [version, setVersion] = useState('')
   const [intent, setIntent] = useState<Intent | null>(null)
+  const firing = useAlerts(() => setDialog('alerts'))
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -207,15 +210,25 @@ export default function App() {
           ))}
           {instances.length > 0 && groups.length === 0 && <div className="muted" style={{ padding: 16, textAlign: 'center' }}>{t('No matches')}</div>}
         </div>
+        <div className="sider-nav">
+          <div className="sider-nav-item" onClick={() => setDialog('team')}>
+            <TeamOutlined />
+            <span>{t('Team')}</span>
+          </div>
+          <div className="sider-nav-item" onClick={() => setDialog('alerts')}>
+            <BellOutlined />
+            <span>{t('Alerts')}</span>
+            {firing > 0 && <span style={{ marginLeft: 'auto', display: 'flex' }}><Badge count={firing} size="small" /></span>}
+          </div>
+        </div>
         <div className="sider-foot">
           <Tooltip title={t('Import')}><Button type="text" icon={<ImportOutlined />} onClick={() => setDialog('import')} /></Tooltip>
           <Tooltip title={t('Export')}><Button type="text" icon={<ExportOutlined />} onClick={() => setDialog('export')} disabled={!instances.length} /></Tooltip>
           <Tooltip title={t('Jump hosts')}><Button type="text" icon={<CloudServerOutlined />} onClick={() => setDialog('bastions')} /></Tooltip>
           <Tooltip title={t('Audit log')}><Button type="text" icon={<AuditOutlined />} onClick={() => setDialog('audit')} /></Tooltip>
           <Tooltip title={t('Version support & about')}><Button type="text" icon={<InfoCircleOutlined />} onClick={() => setDialog('about')} /></Tooltip>
-          <div style={{ flex: 1 }} />
           <Dropdown dropdownRender={() => settingsMenu} trigger={['click']} placement="topRight" open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <Button type="text" icon={<SettingOutlined />}>{lang === 'zh' ? '中文' : 'EN'}</Button>
+            <Tooltip title={t('Settings')}><Button type="text" icon={<SettingOutlined />} /></Tooltip>
           </Dropdown>
         </div>
       </aside>
@@ -270,6 +283,8 @@ export default function App() {
       />
       <AISettingsModal open={dialog === 'aiSettings'} onClose={() => setDialog('assistant')} />
       <MCPModal open={dialog === 'mcp'} onClose={() => setDialog(null)} />
+      <TeamModal open={dialog === 'team'} onClose={() => setDialog(null)} onChanged={reload} />
+      <AlertsModal open={dialog === 'alerts'} onClose={() => setDialog(null)} instances={instances} current={current ?? null} onOpenInstance={setSelected} />
       <BastionsModal open={dialog === 'bastions'} onClose={() => setDialog(null)} />
       <AboutModal open={dialog === 'about'} version={version} onClose={() => setDialog(null)} />
     </div>

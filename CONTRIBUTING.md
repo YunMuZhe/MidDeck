@@ -15,15 +15,15 @@ go test ./internal/...
 cd frontend && npm run build   # 前端类型检查 + 构建
 ```
 
-本地演练环境（Kafka、Redis、RabbitMQ，外加一台 SSH 跳板机，用来测试隧道）：
+本地演练环境（Kafka、Schema Registry、Redis、RabbitMQ，外加一台 SSH 跳板机，用来测试隧道）：
 
 ```bash
 docker compose -f dev/docker-compose.yml up -d
-./dev/seed.sh                 # 写入示例 topic、消息、消费组、key、队列
+./dev/seed.sh                 # 写入示例 topic、消息（含 Avro / Protobuf）、消费组、key、队列
 go run ./dev/seedconfig       # 把对应的连接配置加进 MidDeck
 ```
 
-跳板机是 `ops / middeck @ localhost:2222`。通过它访问的 `kafka:19092`、`redis:6379` 只在 Docker 网络内可解析，模拟真实内网。
+跳板机是 `ops / middeck @ localhost:2222`。通过它访问的 `kafka:19092`、`redis:6379`、`http://schema-registry:8081` 只在 Docker 网络内可解析，模拟真实内网。示例 `.proto` 文件在 `dev/protos`。
 
 ## 国际化
 
@@ -32,7 +32,7 @@ go run ./dev/seedconfig       # 把对应的连接配置加进 MidDeck
 ## AI 助手与 MCP
 
 - AI 助手的动作目录在 `internal/ai/actions.go`，前端在 `frontend/src/Assistant.tsx` 展示，各视图通过 `intent` 属性接收并**只预填表单**。新增动作时两边一起改，绝不在收到动作后直接执行写操作。
-- MCP 工具在 `mcp.go`，协议实现在 `internal/mcp`。只暴露只读能力；本地调试：`go build -tags desktop,production -o /tmp/middeck . && /tmp/middeck mcp`（macOS 需 `CGO_LDFLAGS="-framework UniformTypeIdentifiers"`）。
+- MCP 工具在 `mcp.go`（中间件只读）和 `mcp_config.go`（连接配置增删改查），协议实现在 `internal/mcp`；无界面版：`CGO_ENABLED=0 GOOS=linux go build -tags headless .`，入口在 `main_headless.go`，Git 同步在 `app_sync.go`。本地调试：`go build -tags desktop,production -o /tmp/middeck . && /tmp/middeck mcp`（macOS 需 `CGO_LDFLAGS="-framework UniformTypeIdentifiers"`）。
 
 ## 新增一种中间件
 

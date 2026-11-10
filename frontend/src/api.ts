@@ -3,7 +3,8 @@
 import type {
   AIAction, AISettings, AuditEntry, Bastion, BastionView, Binding, ConnectResult, Exchange, FetchReq, GroupDetail, GroupSummary, ImportResult, Instance,
   KeyValue, Matrix, Message, OffsetChange, PeekedMessage, Queue, Report, ScanResult, SlowLog, Topic, TopicDetail,
-  ChangeResult, ParkedBatch, Plan, Replay, SkipPreview, TextFile,
+  ChangeResult, ParkedBatch, Plan, Replay, SkipPreview, TextFile, ProtoBinding, ProtoTypes, SchemaSubject, RegistrySchema,
+  CatalogEntry, LibraryFile, TeamStatus, WatchRule, WatchState, WatchStatus,
 } from './types'
 
 export interface SkipReq { group: string; topic: string; counts: Record<number, number> }
@@ -18,6 +19,15 @@ function call<T>(method: string, ...args: unknown[]): Promise<T> {
   const fn = window.go?.main?.App?.[method]
   if (!fn) return Promise.reject(new Error(`后端方法 ${method} 不可用（请在 MidDeck 应用内运行）`))
   return fn(...args) as Promise<T>
+}
+
+/** Subscribe to a backend (Wails) event; returns the unsubscribe function. */
+export function onBackendEvent<T>(name: string, fn: (data: T) => void): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rt = (window as any).runtime
+  if (!rt?.EventsOn) return () => {}
+  const off = rt.EventsOn(name, fn)
+  return typeof off === 'function' ? off : () => rt.EventsOff?.(name)
 }
 
 export const api = {
@@ -51,6 +61,10 @@ export const api = {
   kafkaDeleteTopic: (id: string, t: string) => call<void>('KafkaDeleteTopic', id, t),
   kafkaSetPartitions: (id: string, t: string, n: number) => call<void>('KafkaSetPartitions', id, t, n),
   kafkaAlterTopicConfigs: (id: string, t: string, set: Record<string, string>) => call<void>('KafkaAlterTopicConfigs', id, t, set),
+  kafkaSchemaSubjects: (id: string) => call<SchemaSubject[] | null>('KafkaSchemaSubjects', id).then((x) => x ?? []),
+  kafkaSchema: (id: string, subject: string, version: string) => call<RegistrySchema>('KafkaSchema', id, subject, version),
+  kafkaProtoTypes: (id: string, reload: boolean) => call<ProtoTypes>('KafkaProtoTypes', id, reload),
+  kafkaSetProtoBinding: (id: string, b: ProtoBinding) => call<void>('KafkaSetProtoBinding', id, b),
   kafkaFetch: (id: string, r: FetchReq) => call<Message[] | null>('KafkaFetch', id, r).then((x) => x ?? []),
   kafkaProduce: (id: string, r: { topic: string; partition: number; key: string; value: string; headers: { key: string; value: string }[] }) =>
     call<Message>('KafkaProduce', id, r),
@@ -96,6 +110,26 @@ export const api = {
   rabbitPublish: (id: string, r: { exchange: string; routingKey: string; payload: string; headers: Record<string, string>; persistent: boolean }) =>
     call<boolean>('RabbitPublish', id, r),
   rabbitExportDefinitions: (id: string) => call<string>('RabbitExportDefinitions', id),
+
+  changesetLibrary: () => call<LibraryFile[] | null>('ChangesetLibrary').then((x) => x ?? []),
+  changesetLibraryRead: (name: string) => call<string>('ChangesetLibraryRead', name),
+  changesetLibrarySave: (name: string, content: string, overwrite: boolean) => call<string>('ChangesetLibrarySave', name, content, overwrite),
+  changesetLibraryDelete: (name: string) => call<void>('ChangesetLibraryDelete', name),
+
+  teamStatus: () => call<TeamStatus>('TeamStatus'),
+  teamPickRepo: () => call<TeamStatus>('TeamPickRepo'),
+  teamSetRepo: (dir: string) => call<TeamStatus>('TeamSetRepo', dir),
+  teamSync: () => call<TeamStatus>('TeamSync'),
+  teamCatalog: () => call<CatalogEntry[] | null>('TeamCatalog').then((x) => x ?? []),
+  teamPublishCatalog: (ids: string[]) => call<void>('TeamPublishCatalog', ids),
+  teamImportCatalog: (ids: string[]) => call<{ added: number; overwritten: number; skipped: number }>('TeamImportCatalog', ids),
+
+  watchState: () => call<WatchState>('WatchState'),
+  watchSaveRule: (r: WatchRule) => call<WatchRule>('WatchSaveRule', r),
+  watchDeleteRule: (id: string) => call<void>('WatchDeleteRule', id),
+  watchCheck: (id: string) => call<WatchStatus>('WatchCheck', id),
+  watchClearAlerts: () => call<void>('WatchClearAlerts'),
+  watchTestNotify: () => call<void>('WatchTestNotify'),
 }
 
 export const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))

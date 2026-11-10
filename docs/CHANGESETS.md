@@ -15,6 +15,11 @@ Open a Kafka or RabbitMQ connection and click **Changeset** in the header.
 - **Load from a connection** exports the current topology of this connection or of another one of the same kind. To promote staging to prod, load staging while you are on the prod connection, then click Plan.
 - **env** picks which `envs.<name>` overrides to use. It defaults to the connection's environment.
 - **Plan** lists what will be created, updated or deleted, plus conflicts and warnings. **Apply** runs it.
+- **Library** lists changesets saved on this computer, including drafts AI tools saved through MCP. *Save to library* stores the current YAML there.
+
+### Drafted by AI
+
+The AI assistant (⌘K) and the MCP server can write changeset YAML for you, e.g. "add topic order-refund with 6 partitions to the orders Kafka". The assistant opens the draft in this editor; MCP tools save it to the library. Either way nothing is applied: you read the YAML, click Plan and decide whether to Apply.
 
 ## File format
 

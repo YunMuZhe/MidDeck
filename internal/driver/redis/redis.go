@@ -522,3 +522,95 @@ func (s *Session) SlowLog(ctx context.Context, n int64) ([]SlowLog, error) {
 	}
 	return out, nil
 }
+
+// KeyMemory is the result of MEMORY USAGE for one key.
+type KeyMemory struct {
+	Key   string
+	Bytes int64
+}
+
+// SampleMemory measures a slice of the keyspace: it continues SCAN from cursors
+// (one per node; the entry is updated in place and wraps to 0 at the end), stops
+// after about budget keys, and measures those plus the keys in also with MEMORY
+// USAGE. It is meant for a background patrol, so it never walks the whole
+// keyspace in one call. Keys that vanished in between are left out.
+func (s *Session) SampleMemory(ctx context.Context, pattern string, cursors map[string]uint64, budget int, also []string) ([]KeyMemory, error) {
+	if pattern == "" {
+		pattern = "*"
+	}
+	var (
+		mu  sync.Mutex
+		out []KeyMemory
+	)
+	measure := func(ctx context.Context, p goredis.Pipeliner, keys []string) {
+		for len(keys) > 0 {
+			n := min(len(keys), 200)
+			cmds := make([]*goredis.IntCmd, n)
+			for i, k := range keys[:n] {
+				cmds[i] = p.MemoryUsage(ctx, k)
+			}
+			_, _ = p.Exec(ctx) // missing keys answer nil; the rest are still valid
+			mu.Lock()
+			for i, c := range cmds {
+				if v, err := c.Result(); err == nil {
+					out = append(out, KeyMemory{Key: keys[i], Bytes: v})
+				}
+			}
+			mu.Unlock()
+			keys = keys[n:]
+		}
+	}
+	walk := func(ctx context.Context, c goredis.Cmdable, p func() goredis.Pipeliner, node string, budget int) error {
+		mu.Lock()
+		cur := cursors[node]
+		mu.Unlock()
+		for seen := 0; seen < budget; {
+			ks, next, err := c.Scan(ctx, cur, pattern, 500).Result()
+			if err != nil {
+				return err
+			}
+			seen += max(len(ks), 50) // a selective pattern returns little per call; still bound the calls
+			measure(ctx, p(), ks)
+			cur = next
+			if cur == 0 {
+				break
+			}
+		}
+		mu.Lock()
+		cursors[node] = cur
+		mu.Unlock()
+		return nil
+	}
+	if s.cluster != nil {
+		masters := 0
+		_ = s.cluster.ForEachMaster(ctx, func(context.Context, *goredis.Client) error {
+			mu.Lock()
+			masters++
+			mu.Unlock()
+			return nil
+		})
+		per := budget / max(masters, 1)
+		err := s.cluster.ForEachMaster(ctx, func(ctx context.Context, c *goredis.Client) error {
+			return walk(ctx, c, c.Pipeline, c.Options().Addr, per)
+		})
+		if err != nil {
+			return nil, err
+		}
+	} else if err := walk(ctx, s.cl, s.cl.Pipeline, "", budget); err != nil {
+		return nil, err
+	}
+	if len(also) > 0 {
+		have := map[string]bool{}
+		for _, k := range out {
+			have[k.Key] = true
+		}
+		var rest []string
+		for _, k := range also {
+			if !have[k] {
+				rest = append(rest, k)
+			}
+		}
+		measure(ctx, s.cl.Pipeline(), rest)
+	}
+	return out, nil
+}

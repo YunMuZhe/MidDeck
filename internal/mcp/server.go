@@ -23,7 +23,9 @@ type Tool struct {
 	Title       string
 	Description string
 	Properties  map[string]any
-	Required    []string
+	// Writes marks tools that change MidDeck's own configuration; Destructive ones delete.
+	Writes, Destructive bool
+	Required            []string
 	// Handler returns any JSON-serialisable value; it is sent back as text.
 	Handler func(ctx context.Context, args map[string]any) (any, error)
 }
@@ -141,7 +143,7 @@ func (s *Server) handle(req request) any {
 			}
 			list = append(list, map[string]any{
 				"name": t.Name, "title": t.Title, "description": t.Description, "inputSchema": schema,
-				"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+				"annotations": map[string]any{"readOnlyHint": !t.Writes, "destructiveHint": t.Destructive, "openWorldHint": false},
 			})
 		}
 		return map[string]any{"tools": list}

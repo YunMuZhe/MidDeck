@@ -20,6 +20,7 @@ import (
 	"github.com/YunMuZhe/MidDeck/internal/driver/redis"
 	"github.com/YunMuZhe/MidDeck/internal/i18n"
 	"github.com/YunMuZhe/MidDeck/internal/tunnel"
+	"github.com/YunMuZhe/MidDeck/internal/watch"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -37,6 +38,9 @@ type App struct {
 	// opening holds one lock per instance so concurrent callers (e.g. parallel MCP
 	// tool calls) share one session instead of racing to open several.
 	opening map[string]*sync.Mutex
+
+	watcher *watch.Engine
+	sync    *repoSync // set by "mcp --repo"
 }
 
 type conn struct {
@@ -51,7 +55,9 @@ func NewApp() *App { return &App{conns: map[string]*conn{}} }
 func (a *App) startup(ctx context.Context) {
 	if err := a.init(ctx); err != nil {
 		runtime.LogErrorf(ctx, "open config store: %v", err)
+		return
 	}
+	a.startWatch()
 }
 
 // init opens the data directory; shared by the GUI and the headless MCP mode.
@@ -67,6 +73,9 @@ func (a *App) init(ctx context.Context) error {
 }
 
 func (a *App) shutdown(context.Context) {
+	if a.watcher != nil {
+		a.watcher.Stop()
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for id, c := range a.conns {
@@ -268,6 +277,9 @@ func fillSecrets(dst *config.Instance, src config.Instance) {
 	}
 	if dst.Network.Proxy.Secret == "" {
 		dst.Network.Proxy.Secret = src.Network.Proxy.Secret
+	}
+	if dst.Registry.Password == "" {
+		dst.Registry.Password = src.Registry.Password
 	}
 	for i := range dst.Network.SSH {
 		if dst.Network.SSH[i].BastionID == "" && dst.Network.SSH[i].Secret == "" && i < len(src.Network.SSH) {

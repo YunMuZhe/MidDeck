@@ -176,12 +176,63 @@ export const fmtBytes = (b: number) => {
   return `${(b / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`
 }
 
+/**
+ * Re-indents JSON text without parsing it, so 64-bit IDs and long decimals keep
+ * every digit (JSON.parse would round them to doubles).
+ */
 export const prettyJSON = (s: string) => {
   const t = s.trim()
   if (!(t.startsWith('{') || t.startsWith('['))) return s
   try {
-    return JSON.stringify(JSON.parse(t), null, 2)
+    JSON.parse(t) // validate only
   } catch {
     return s
   }
+  let out = ''
+  let depth = 0
+  let inStr = false
+  const nl = () => '\n' + '  '.repeat(depth)
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]
+    if (inStr) {
+      out += c
+      if (c === '\\') out += t[++i]
+      else if (c === '"') inStr = false
+      continue
+    }
+    switch (c) {
+      case '"':
+        inStr = true
+        out += c
+        break
+      case '{':
+      case '[': {
+        // Keep empty containers on one line.
+        let j = i + 1
+        while (/\s/.test(t[j])) j++
+        if (t[j] === (c === '{' ? '}' : ']')) {
+          out += c + t[j]
+          i = j
+        } else {
+          depth++
+          out += c + nl()
+        }
+        break
+      }
+      case '}':
+      case ']':
+        depth--
+        out += nl() + c
+        break
+      case ',':
+        out += ',' + nl()
+        break
+      case ':':
+        out += ': '
+        break
+      default:
+        if (!/\s/.test(c)) out += c
+    }
+  }
+  return out
 }

@@ -9,6 +9,7 @@ import TopicsTab from './TopicsTab'
 import MessagesTab from './MessagesTab'
 import GroupsTab from './GroupsTab'
 import ParkedTab from './Parked'
+import SchemasTab from './SchemasTab'
 
 export default function KafkaView({ inst, instances, intent, onIntentDone }: { inst: Instance; instances: Instance[]; intent?: Intent; onIntentDone: () => void }) {
   const t = useT()
@@ -24,7 +25,7 @@ export default function KafkaView({ inst, instances, intent, onIntentDone }: { i
     const a: ActionArgs = { ...intent.args, seq: intent.seq }
     switch (intent.action) {
       case 'open_instance':
-        if (['topics', 'messages', 'groups', 'parked'].includes(a.tab)) setTab(a.tab)
+        if (['topics', 'messages', 'groups', 'parked', 'schemas'].includes(a.tab)) setTab(a.tab)
         break
       case 'kafka_create_topic':
         setTab('topics')
@@ -86,6 +87,7 @@ export default function KafkaView({ inst, instances, intent, onIntentDone }: { i
           { key: 'messages', label: t('Messages'), children: <MessagesTab inst={inst} topic={msgTopic} prefill={searchPrefill} /> },
           { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} resetPrefill={resetPrefill} onParked={(b) => { setParkedFocus(b.id); setTab('parked') }} /> },
           { key: 'parked', label: t('Parked'), children: <ParkedTab inst={inst} instances={instances} focus={parkedFocus} /> },
+          ...(inst.registry?.url ? [{ key: 'schemas', label: t('Schemas'), children: <SchemasTab inst={inst} /> }] : []),
         ]}
       />
     </>

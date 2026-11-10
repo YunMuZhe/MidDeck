@@ -60,8 +60,15 @@ pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .brand-name { font-weight: 650; font-size: 16px; letter-spacing: -0.01em; }
 .brand-ver { font-size: 11px; color: var(--md-text-3); margin-left: auto; }
 .sider-list { flex: 1; overflow: auto; padding: 4px 8px 12px; }
+.sider-nav { padding: 6px 8px; border-top: 1px solid var(--md-border); }
+.sider-nav-item {
+  display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px;
+  border-radius: 7px; cursor: pointer; color: var(--md-text-2); font-size: 13px;
+}
+.sider-nav-item:hover { background: var(--md-hover); color: var(--md-text); }
+.sider-nav-item .anticon { font-size: 15px; }
 .sider-foot {
-  display: flex; align-items: center; gap: 2px; padding: 8px 10px;
+  display: grid; grid-template-columns: repeat(6, 1fr); justify-items: center; padding: 6px 8px;
   border-top: 1px solid var(--md-border);
 }
 .group-head {
@@ -145,6 +152,9 @@ pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .toolbar .spacer { flex: 1; }
 .muted { color: var(--md-text-3); }
 .cell-ellipsis { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+.cell-flex { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; vertical-align: bottom; }
+.cell-flex .cell-ellipsis { min-width: 0; }
+.fmt-tag { margin: 0; font-size: 11px; line-height: 18px; padding: 0 5px; flex: none; }
 .code-block { background: var(--md-code-bg); border-radius: 8px; padding: 12px; border: 1px solid var(--md-border); }
 .console-out { background: #0d1117; color: #c9d1d9; padding: 14px; border-radius: 10px; height: 440px; overflow: auto; border: 1px solid #21262d; }
 .console-out .cmd { color: #79c0ff; }
@@ -193,3 +203,14 @@ pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .plan-to { color: #2b8a3e; font-weight: 600; }
 .plan-note { font-size: 12px; padding-left: 18px; margin-top: 4px; opacity: .75; }
 .row-focus > td { background: rgba(28, 126, 214, .08) !important; }
+
+/* Team, approvals, alerts, changeset library */
+.team-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--md-border); border-radius: 10px; background: var(--md-tile-bg); }
+.proposal-yaml { margin: 8px 0 0; padding: 10px 12px; max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.5; border: 1px solid var(--md-border); border-radius: 8px; background: var(--md-bg, transparent); }
+.lib-menu { min-width: 380px; max-height: 420px; overflow: auto; }
+.lib-item { display: flex; align-items: center; gap: 8px; }
+.lib-item .spacer { flex: 1; }
+.lib-item .lib-del { visibility: hidden; font-size: 12px; color: #e03131; }
+.lib-item:hover .lib-del { visibility: visible; }
+
+.catalog-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }

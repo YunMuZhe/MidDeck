@@ -20,7 +20,21 @@ xattr -dr com.apple.quarantine /Applications/MidDeck.app
 
 运行 `setup.exe` 或 `portable.exe` 时，如果出现“Windows 已保护你的电脑”（SmartScreen），点 **更多信息 → 仍要运行**。
 
-Windows 10 / 11 自带 WebView2 运行时，不需要另外安装。
+MidDeck 的界面依赖 WebView2 运行时。Windows 11 和较新的 Windows 10 已经自带；Windows Server 等没有自带的机器上，`setup.exe` 和 `portable.exe` 会提示联网下载。
+
+**离线机器（如堡垒机）**请改用 `MidDeck-*-windows-*-offline.zip`：
+
+1. 解压到任意目录（例如 `D:\MidDeck`），保持 `MidDeck.exe` 和 `webview2\` 文件夹在同一层。
+2. 双击 `MidDeck.exe`。不需要安装、管理员权限或联网。
+
+首次启动时，MidDeck 会给 `webview2\` 目录授予 WebView2 沙箱所需的读取权限（等价于下面两条命令）。如果窗口白屏，可以手动执行一次：
+
+```bat
+icacls webview2 /grant *S-1-15-2-1:(OI)(CI)(RX) /T
+icacls webview2 /grant *S-1-15-2-2:(OI)(CI)(RX) /T
+```
+
+WebView2 仅支持 Windows 10 / Server 2016 及以上。
 
 ## Linux
 
@@ -47,5 +61,5 @@ tar xzf MidDeck-*-linux-amd64.tar.gz
 Builds are not code-signed yet.
 
 - **macOS 15+**: open the app once, then go to *System Settings → Privacy & Security* and click **Open Anyway**. On macOS 14 and earlier, right-click the app → Open. Or run `xattr -dr com.apple.quarantine /Applications/MidDeck.app`.
-- **Windows**: on the SmartScreen dialog click **More info → Run anyway**.
+- **Windows**: on the SmartScreen dialog click **More info → Run anyway**. On machines without WebView2 or internet (e.g. bastion hosts), use `MidDeck-*-windows-*-offline.zip`: unzip it, keep `MidDeck.exe` next to the `webview2\` folder, and run `MidDeck.exe`.
 - **Linux**: install `libwebkit2gtk-4.1-0` and `libgtk-3-0`, then run the binary.

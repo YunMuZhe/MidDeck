@@ -213,6 +213,7 @@ const actionTitle: Record<string, string> = {
   redis_command: 'Redis command',
   rabbit_create_queue: 'Create queue',
   rabbit_publish: 'Publish message',
+  changeset_draft: 'Changeset draft',
 }
 
 const argLabel: Record<string, string> = {
@@ -221,7 +222,7 @@ const argLabel: Record<string, string> = {
   partitions: 'Partitions', replication: 'Replication factor', retention_ms: 'retention.ms', cleanup: 'cleanup.policy', topic: 'Topic',
   partition: 'Partition', mode: 'Mode', offset: 'Offset', since: 'Time', limit: 'Limit', key: 'Key', contains: 'Value contains',
   group: 'Consumer group', value: 'Value', pattern: 'Pattern', command: 'Command', type: 'Type', bind_exchange: 'Bind to exchange',
-  routing_key: 'Routing key', exchange: 'Exchange', payload: 'Payload',
+  routing_key: 'Routing key', exchange: 'Exchange', payload: 'Payload', summary: 'Summary',
 }
 
 function Proposal({ a, byId, onApply, onOpen }: { a: AIAction; byId: (id?: string) => Instance | undefined; onApply: () => void; onOpen: (id: string) => void }) {
@@ -241,7 +242,7 @@ function Proposal({ a, byId, onApply, onOpen }: { a: AIAction; byId: (id?: strin
   }
   const inst = byId(args.instance_id)
   const rows: { k: string; v: ReactNode }[] = Object.entries(args)
-    .filter(([k, v]) => k !== 'instance_id' && v !== '' && v !== null && !(Array.isArray(v) && !v.length))
+    .filter(([k, v]) => k !== 'instance_id' && k !== 'yaml' && v !== '' && v !== null && !(Array.isArray(v) && !v.length))
     .map(([k, v]) => ({ k, v: <span className="mono">{Array.isArray(v) ? v.join(', ') : String(v)}</span> }))
   return (
     <div className="proposal">
@@ -252,11 +253,12 @@ function Proposal({ a, byId, onApply, onOpen }: { a: AIAction; byId: (id?: strin
       {a.text && <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>{a.text}</Typography.Paragraph>}
       {rows.length > 0 ? (
         <Descriptions size="small" column={2} items={rows.map((r) => ({ key: r.k, label: t(argLabel[r.k] ?? r.k), children: r.v }))} />
-      ) : (
+      ) : !args.yaml ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} style={{ margin: 0 }} />
-      )}
+      ) : null}
+      {args.yaml && <pre className="proposal-yaml mono">{String(args.yaml)}</pre>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-        <Button type="primary" onClick={onApply}>{a.action === 'open_instance' ? t('Open') : t('Open prefilled form')}</Button>
+        <Button type="primary" onClick={onApply}>{a.action === 'open_instance' ? t('Open') : a.action === 'changeset_draft' ? t('Open in changeset editor') : t('Open prefilled form')}</Button>
       </div>
     </div>
   )

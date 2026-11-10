@@ -4,6 +4,7 @@
 //
 //	MIDDECK_KAFKA=localhost:9092 MIDDECK_REDIS=localhost:6379 \
 //	MIDDECK_RABBIT_MGMT=http://localhost:15672 MIDDECK_RABBIT_AMQP=localhost:5672 \
+//	MIDDECK_REGISTRY=http://localhost:8081 \
 //	go test -tags integration ./internal/integration/ -v
 //
 // MIDDECK_EXPECT_<KAFKA|REDIS|RABBIT>=major.minor additionally asserts the detected

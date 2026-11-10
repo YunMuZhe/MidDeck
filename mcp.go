@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/YunMuZhe/MidDeck/internal/changeset"
 	"github.com/YunMuZhe/MidDeck/internal/config"
 	"github.com/YunMuZhe/MidDeck/internal/driver/kafka"
 	"github.com/YunMuZhe/MidDeck/internal/driver/redis"
@@ -19,10 +22,35 @@ import (
 //
 //	MidDeck mcp
 //
-// Everything exposed is read-only; changes stay in the GUI, where they get
+// Nothing exposed here changes a middleware; the config tools (mcp_config.go)
+// edit MidDeck's own connection list. The changeset tools can draft a
+// YAML changeset and dry-run it, and changeset_propose saves the draft to the
+// library; a person plans and applies it in the GUI, where changes get
 // confirmation dialogs, read-only enforcement and the audit log.
-func runMCP() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+func runMCP(args []string) int {
+	env := func(k, def string) string {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+		return def
+	}
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	dataDir := fs.String("data-dir", "", "data folder (default: the user config dir, or $MIDDECK_DATA_DIR)")
+	repo := fs.String("repo", env("MIDDECK_REPO", ""), "Git URL or local clone whose middeck/catalog.json provides the connections ($MIDDECK_REPO)")
+	branch := fs.String("branch", env("MIDDECK_REPO_BRANCH", ""), "branch of --repo ($MIDDECK_REPO_BRANCH; default: the remote's default branch)")
+	every := fs.Duration("sync-interval", 5*time.Minute, "how often to pull --repo; 0 syncs only at start ($MIDDECK_SYNC_INTERVAL)")
+	if v := os.Getenv("MIDDECK_SYNC_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			*every = d
+		}
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *dataDir != "" {
+		os.Setenv("MIDDECK_DATA_DIR", *dataDir)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a := NewApp()
 	if err := a.init(ctx); err != nil {
@@ -30,13 +58,21 @@ func runMCP() int {
 		return 1
 	}
 	defer a.shutdown(ctx)
+	if *repo != "" {
+		a.startRepoSync(ctx, *repo, *branch, *every)
+	}
 	s := &mcp.Server{
 		Name:    "middeck",
 		Version: version,
-		Instructions: "MidDeck gives read-only access to the user's saved Kafka, Redis and RabbitMQ connections, " +
+		Instructions: "MidDeck gives read access to the user's saved Kafka, Redis and RabbitMQ connections, " +
 			"including ones behind SSH jump hosts. Start with list_instances, then pass an instance id or name to the other tools. " +
-			"Nothing here can modify data; for changes, tell the user to use the MidDeck app.",
-		Tools: mcpTools(a),
+			"Nothing here can modify a middleware. To change Kafka topics or RabbitMQ exchanges, queues and bindings, write a changeset: " +
+			"read changeset_format, check your YAML with changeset_plan (a dry run), then save it with changeset_propose and tell the user " +
+			"to open it in MidDeck (Changeset > Library), where they review the plan and apply it themselves. " +
+			"The instance_* and bastion_* tools manage MidDeck's own saved connections and jump hosts (not the middleware); " +
+			"only create, change or delete them when the user asks, and only pass passwords the user gave you. " +
+			"For any other change, tell the user to use the MidDeck app.",
+		Tools: append(mcpTools(a), configTools(a)...),
 	}
 	if err := s.Serve(ctx, os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "middeck mcp:", err)
@@ -193,7 +229,7 @@ func mcpTools(a *App) []mcp.Tool {
 		},
 		{
 			Name: "kafka_fetch_messages", Title: "Read Kafka messages",
-			Description: "Read messages without joining a consumer group (no offsets are committed). Values are returned as text.",
+			Description: "Read messages without joining a consumer group (no offsets are committed). Keys and values are decoded: Schema Registry Avro / Protobuf / JSON and bound local Protobuf types become JSON (keyFormat / valueFormat / valueSchema say how); other non-text payloads are base64 with format \"binary\".",
 			Properties: map[string]any{
 				"instance": inst, "topic": s("topic name"),
 				"partition": n("partition, -1 (default) for all"),
@@ -229,6 +265,27 @@ func mcpTools(a *App) []mcp.Tool {
 					r.Mode, r.Timestamp = "timestamp", ts.UnixMilli()
 				}
 				return a.KafkaFetch(in.ID, r)
+			},
+		},
+		{
+			Name: "kafka_schema", Title: "Read Schema Registry schemas",
+			Description: "Without subject: list Schema Registry subjects with versions and type. With subject: the schema text of a version (default latest).",
+			Properties:  map[string]any{"instance": inst, "subject": s("subject, e.g. orders-value"), "version": s("version number or latest")},
+			Required:    []string{"instance"},
+			Handler: func(_ context.Context, args map[string]any) (any, error) {
+				in, err := need(config.KindKafka, args)
+				if err != nil {
+					return nil, err
+				}
+				sub := mcp.Str(args, "subject")
+				if sub == "" {
+					return a.KafkaSchemaSubjects(in.ID)
+				}
+				v := mcp.Str(args, "version")
+				if v == "" {
+					v = "latest"
+				}
+				return a.KafkaSchema(in.ID, sub, v)
 			},
 		},
 		{
@@ -419,6 +476,65 @@ func mcpTools(a *App) []mcp.Tool {
 					c = 100
 				}
 				return a.RabbitPeek(in.ID, mcp.Str(args, "queue"), int(c))
+			},
+		},
+		{
+			Name: "changeset_format", Title: "Changeset YAML format",
+			Description: "The YAML format of a MidDeck changeset (Kafka topics; RabbitMQ exchanges, queues and bindings) and its rules. Read this before writing one.",
+			Properties:  map[string]any{},
+			Handler: func(context.Context, map[string]any) (any, error) {
+				return changeset.Reference, nil
+			},
+		},
+		{
+			Name: "changeset_export", Title: "Export topology as a changeset",
+			Description: "Describe a Kafka or RabbitMQ instance's current topics / exchanges, queues and bindings as changeset YAML. A good starting point for an edit, or for promoting one environment to another.",
+			Properties:  map[string]any{"instance": inst}, Required: []string{"instance"},
+			Handler: func(_ context.Context, args map[string]any) (any, error) {
+				in, err := a.resolve(mcp.Str(args, "instance"))
+				if err != nil {
+					return nil, err
+				}
+				return a.ChangesetExport(in.ID)
+			},
+		},
+		{
+			Name: "changeset_plan", Title: "Dry-run a changeset",
+			Description: "Validate changeset YAML and show what applying it to an instance would create, update or delete, with conflicts and warnings. Changes nothing.",
+			Properties: map[string]any{"instance": inst, "yaml": s("the changeset YAML"),
+				"env": s("which envs.<name> overrides to use; defaults to the instance's environment")},
+			Required: []string{"instance", "yaml"},
+			Handler: func(_ context.Context, args map[string]any) (any, error) {
+				in, err := a.resolve(mcp.Str(args, "instance"))
+				if err != nil {
+					return nil, err
+				}
+				p, err := a.ChangesetPlan(in.ID, mcp.Str(args, "yaml"), mcp.Str(args, "env"))
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"summary": changeset.Format(p), "plan": p,
+					"note": "This was a dry run. Save the YAML with changeset_propose; the user applies it in MidDeck."}, nil
+			},
+		},
+		{
+			Name: "changeset_propose", Title: "Save a changeset for the user to review",
+			Description: "Validate changeset YAML and save it to MidDeck's local changeset library. " +
+				"It does not apply anything. Afterwards tell the user the file name; they open it in MidDeck under Changeset > Library, plan it and apply it.",
+			Properties: map[string]any{
+				"name":      s("file name, e.g. order-topics.yaml (letters, digits, dot, dash, underscore)"),
+				"yaml":      s("the changeset YAML"),
+				"overwrite": map[string]any{"type": "boolean", "description": "replace an existing file with the same name; default false"},
+			},
+			Required: []string{"name", "yaml"},
+			Handler: func(_ context.Context, args map[string]any) (any, error) {
+				overwrite, _ := args["overwrite"].(bool)
+				name, err := a.saveLibrary(mcp.Str(args, "name"), mcp.Str(args, "yaml"), overwrite)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"saved": name,
+					"next": "Not applied. Ask the user to open MidDeck, pick a connection, click Changeset > Library, open this file, then Plan and Apply."}, nil
 			},
 		},
 	}
