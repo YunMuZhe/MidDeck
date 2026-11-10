@@ -188,6 +188,7 @@ type Queue struct {
 	Ready      int64          `json:"messages_ready"`
 	Unacked    int64          `json:"messages_unacknowledged"`
 	Consumers  int64          `json:"consumers"`
+	Exclusive  bool           `json:"exclusive"`
 	Arguments  map[string]any `json:"arguments"`
 	Node       string         `json:"node"`
 }
@@ -226,6 +227,7 @@ type Binding struct {
 	DestinationType string         `json:"destination_type"`
 	RoutingKey      string         `json:"routing_key"`
 	Arguments       map[string]any `json:"arguments"`
+	PropertiesKey   string         `json:"properties_key,omitempty"`
 }
 
 func (s *Session) QueueBindings(ctx context.Context, queue string) ([]Binding, error) {
@@ -235,10 +237,11 @@ func (s *Session) QueueBindings(ctx context.Context, queue string) ([]Binding, e
 }
 
 type CreateQueueReq struct {
-	Name      string         `json:"name"`
-	Type      string         `json:"type"` // classic | quorum | stream
-	Durable   bool           `json:"durable"`
-	Arguments map[string]any `json:"arguments"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type"` // classic | quorum | stream
+	Durable    bool           `json:"durable"`
+	AutoDelete bool           `json:"autoDelete"`
+	Arguments  map[string]any `json:"arguments"`
 	// Optional binding created together with the queue.
 	BindExchange string `json:"bindExchange"`
 	RoutingKey   string `json:"routingKey"`
@@ -253,7 +256,7 @@ func (s *Session) CreateQueue(ctx context.Context, r CreateQueueReq) error {
 		args["x-queue-type"] = r.Type
 		r.Durable = true
 	}
-	body := map[string]any{"durable": r.Durable, "auto_delete": false, "arguments": args}
+	body := map[string]any{"durable": r.Durable, "auto_delete": r.AutoDelete, "arguments": args}
 	if err := s.do(ctx, http.MethodPut, "/api/queues/"+esc(s.vhost())+"/"+esc(r.Name), body, nil); err != nil {
 		return err
 	}
@@ -273,14 +276,54 @@ func (s *Session) PurgeQueue(ctx context.Context, name string) error {
 }
 
 type CreateExchangeReq struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"` // direct | topic | fanout | headers
-	Durable bool   `json:"durable"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type"` // direct | topic | fanout | headers
+	Durable    bool           `json:"durable"`
+	AutoDelete bool           `json:"autoDelete"`
+	Internal   bool           `json:"internal"`
+	Arguments  map[string]any `json:"arguments"`
 }
 
 func (s *Session) CreateExchange(ctx context.Context, r CreateExchangeReq) error {
+	args := r.Arguments
+	if args == nil {
+		args = map[string]any{}
+	}
 	return s.do(ctx, http.MethodPut, "/api/exchanges/"+esc(s.vhost())+"/"+esc(r.Name),
-		map[string]any{"type": r.Type, "durable": r.Durable, "auto_delete": false, "internal": false, "arguments": map[string]any{}}, nil)
+		map[string]any{"type": r.Type, "durable": r.Durable, "auto_delete": r.AutoDelete, "internal": r.Internal, "arguments": args}, nil)
+}
+
+func (s *Session) DeleteExchange(ctx context.Context, name string) error {
+	return s.do(ctx, http.MethodDelete, "/api/exchanges/"+esc(s.vhost())+"/"+esc(name), nil, nil)
+}
+
+// ListBindings returns every binding in the vhost.
+func (s *Session) ListBindings(ctx context.Context) ([]Binding, error) {
+	var bs []Binding
+	err := s.get(ctx, "/api/bindings/"+esc(s.vhost()), &bs)
+	return bs, err
+}
+
+func bindingPath(vhost string, b Binding) string {
+	t := "q"
+	if b.DestinationType == "exchange" {
+		t = "e"
+	}
+	return "/api/bindings/" + esc(vhost) + "/e/" + esc(b.Source) + "/" + t + "/" + esc(b.Destination)
+}
+
+// CreateBinding binds b.Source to a queue or exchange.
+func (s *Session) CreateBinding(ctx context.Context, b Binding) error {
+	args := b.Arguments
+	if args == nil {
+		args = map[string]any{}
+	}
+	return s.do(ctx, http.MethodPost, bindingPath(s.vhost(), b), map[string]any{"routing_key": b.RoutingKey, "arguments": args}, nil)
+}
+
+// DeleteBinding removes a binding; b.PropertiesKey comes from ListBindings.
+func (s *Session) DeleteBinding(ctx context.Context, b Binding) error {
+	return s.do(ctx, http.MethodDelete, bindingPath(s.vhost(), b)+"/"+esc(b.PropertiesKey), nil, nil)
 }
 
 type PeekedMessage struct {

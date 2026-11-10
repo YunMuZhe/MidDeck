@@ -8,13 +8,15 @@ import type { ActionArgs, GroupSummary, Instance, Intent, Topic } from '../types
 import TopicsTab from './TopicsTab'
 import MessagesTab from './MessagesTab'
 import GroupsTab from './GroupsTab'
+import ParkedTab from './Parked'
 
-export default function KafkaView({ inst, intent, onIntentDone }: { inst: Instance; intent?: Intent; onIntentDone: () => void }) {
+export default function KafkaView({ inst, instances, intent, onIntentDone }: { inst: Instance; instances: Instance[]; intent?: Intent; onIntentDone: () => void }) {
   const t = useT()
   const [tab, setTab] = useState('topics')
   const [createPrefill, setCreatePrefill] = useState<ActionArgs>()
   const [searchPrefill, setSearchPrefill] = useState<ActionArgs>()
   const [resetPrefill, setResetPrefill] = useState<ActionArgs>()
+  const [parkedFocus, setParkedFocus] = useState<string>()
 
   // Proposals from the AI assistant: open the matching form, filled in, never run it.
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function KafkaView({ inst, intent, onIntentDone }: { inst: Instan
     const a: ActionArgs = { ...intent.args, seq: intent.seq }
     switch (intent.action) {
       case 'open_instance':
-        if (['topics', 'messages', 'groups'].includes(a.tab)) setTab(a.tab)
+        if (['topics', 'messages', 'groups', 'parked'].includes(a.tab)) setTab(a.tab)
         break
       case 'kafka_create_topic':
         setTab('topics')
@@ -82,7 +84,8 @@ export default function KafkaView({ inst, intent, onIntentDone }: { inst: Instan
         items={[
           { key: 'topics', label: t('Topics'), children: <TopicsTab inst={inst} prefill={createPrefill} onBrowse={(name) => { setMsgTopic({ name, n: Date.now() }); setTab('messages') }} onChanged={refreshStats} /> },
           { key: 'messages', label: t('Messages'), children: <MessagesTab inst={inst} topic={msgTopic} prefill={searchPrefill} /> },
-          { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} resetPrefill={resetPrefill} /> },
+          { key: 'groups', label: t('Consumer groups'), children: <GroupsTab inst={inst} onChanged={refreshStats} resetPrefill={resetPrefill} onParked={(b) => { setParkedFocus(b.id); setTab('parked') }} /> },
+          { key: 'parked', label: t('Parked'), children: <ParkedTab inst={inst} instances={instances} focus={parkedFocus} /> },
         ]}
       />
     </>

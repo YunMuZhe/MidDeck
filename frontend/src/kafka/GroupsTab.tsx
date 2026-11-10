@@ -5,7 +5,8 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { api, errMsg } from '../api'
 import { CopyCommand, num, useDangerConfirm } from '../common'
 import { useT } from '../settings'
-import type { ActionArgs, GroupDetail, GroupSummary, Instance, OffsetChange } from '../types'
+import type { ActionArgs, GroupDetail, GroupSummary, Instance, OffsetChange, ParkedBatch } from '../types'
+import { SkipModal } from './Parked'
 import { kafkaCli } from './KafkaView'
 
 const stateBadge: Record<string, 'success' | 'default' | 'warning' | 'error'> = {
@@ -19,7 +20,7 @@ const LagValue = ({ lag }: { lag: number }) => (
   </span>
 )
 
-export default function GroupsTab({ inst, onChanged, resetPrefill }: { inst: Instance; onChanged: () => void; resetPrefill?: ActionArgs }) {
+export default function GroupsTab({ inst, onChanged, resetPrefill, onParked }: { inst: Instance; onChanged: () => void; resetPrefill?: ActionArgs; onParked: (b: ParkedBatch) => void }) {
   const { message } = App.useApp()
   const t = useT()
   const [groups, setGroups] = useState<GroupSummary[]>([])
@@ -94,14 +95,15 @@ export default function GroupsTab({ inst, onChanged, resetPrefill }: { inst: Ins
           },
         ]}
       />
-      {detail && <GroupDrawer inst={inst} detail={detail} reset={resetPrefill} onClose={() => setDetail(null)} onRefresh={() => { open(detail.group); load(); onChanged() }} />}
+      {detail && <GroupDrawer inst={inst} detail={detail} reset={resetPrefill} onClose={() => setDetail(null)} onRefresh={() => { open(detail.group); load(); onChanged() }} onParked={(b) => { setDetail(null); load(); onChanged(); onParked(b) }} />}
     </>
   )
 }
 
-function GroupDrawer({ inst, detail, reset, onClose, onRefresh }: { inst: Instance; detail: GroupDetail; reset?: ActionArgs; onClose: () => void; onRefresh: () => void }) {
+function GroupDrawer({ inst, detail, reset, onClose, onRefresh, onParked }: { inst: Instance; detail: GroupDetail; reset?: ActionArgs; onClose: () => void; onRefresh: () => void; onParked: (b: ParkedBatch) => void }) {
   const t = useT()
   const [resetTopic, setResetTopic] = useState<string | null>(reset?.group === detail.group ? reset.topic : null)
+  const [skipTopic, setSkipTopic] = useState<string | null>(null)
   return (
     <Drawer title={detail.group} width={920} open onClose={onClose} extra={<Button icon={<ReloadOutlined />} onClick={onRefresh} />}>
       <Space size="large" style={{ marginBottom: 16 }}>
@@ -114,7 +116,10 @@ function GroupDrawer({ inst, detail, reset, onClose, onRefresh }: { inst: Instan
           <div className="toolbar">
             <Typography.Text strong>{x}</Typography.Text>
             <div className="spacer" />
-            {!inst.readOnly && <Button size="small" onClick={() => setResetTopic(x)}>{t('Reset offsets')}</Button>}
+            <Space size={6}>
+              <Button size="small" onClick={() => setSkipTopic(x)} disabled={!(detail.partitions ?? []).some((p) => p.topic === x && p.lag > 0)}>{t('Skip messages')}</Button>
+              {!inst.readOnly && <Button size="small" onClick={() => setResetTopic(x)}>{t('Reset offsets')}</Button>}
+            </Space>
           </div>
           <Table size="small" rowKey="partition" pagination={false}
             dataSource={(detail.partitions ?? []).filter((p) => p.topic === x)}
@@ -128,6 +133,7 @@ function GroupDrawer({ inst, detail, reset, onClose, onRefresh }: { inst: Instan
             ]} />
         </div>
       ))}
+      {skipTopic && <SkipModal inst={inst} group={detail} topic={skipTopic} onClose={() => setSkipTopic(null)} onDone={onParked} />}
       {resetTopic && <ResetModal inst={inst} group={detail} topic={resetTopic} init={reset?.group === detail.group && reset.topic === resetTopic ? reset : undefined} onClose={() => setResetTopic(null)} onDone={onRefresh} />}
     </Drawer>
   )

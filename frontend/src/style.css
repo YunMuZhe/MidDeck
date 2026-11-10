@@ -175,3 +175,21 @@ pre.mono { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .inst-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--md-main-bg); border: 1px solid var(--md-border); margin: 0 6px 6px 0; }
 .inst-chip.clickable { cursor: pointer; }
 .inst-chip.clickable:hover { border-color: var(--md-active-text); }
+
+/* changesets */
+.changeset { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; height: min(68vh, 720px); }
+.changeset-editor, .changeset-plan { display: flex; flex-direction: column; min-height: 0; }
+.changeset-text { flex: 1; min-height: 0; resize: none !important; white-space: pre; overflow: auto !important; font-size: 12.5px !important; line-height: 1.55 !important; }
+.changeset-plan .plan-view { overflow: auto; min-height: 0; }
+.plan-change { border: 1px solid var(--border, rgba(127,127,127,.2)); border-left-width: 3px; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+.plan-change.create { border-left-color: #2f9e44; }
+.plan-change.update { border-left-color: #1c7ed6; }
+.plan-change.delete { border-left-color: #e03131; }
+.plan-change.conflict { border-left-color: #f08c00; }
+.plan-change-head { display: flex; align-items: center; gap: 6px; }
+.plan-sign { font-family: var(--mono, ui-monospace, monospace); font-weight: 700; width: 12px; text-align: center; }
+.plan-diff { font-size: 12px; padding-left: 18px; margin-top: 3px; word-break: break-all; }
+.plan-from { color: #c92a2a; text-decoration: line-through; opacity: .8; }
+.plan-to { color: #2b8a3e; font-weight: 600; }
+.plan-note { font-size: 12px; padding-left: 18px; margin-top: 4px; opacity: .75; }
+.row-focus > td { background: rgba(28, 126, 214, .08) !important; }

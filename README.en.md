@@ -44,6 +44,7 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - Topics: list, details (partitions / ISR / offsets / configs), create, delete, add partitions, alter configs.
 - Messages: newest / oldest / from offset / from timestamp, key and content filters, JSON pretty print, JSONL export, produce with headers and explicit partition.
 - Consumer groups: lag overview and per-partition detail, **offset reset with a dry-run preview**, delete.
+- **Skip & replay**: save the messages a group is stuck on, move its offsets past them, and replay them after the fix, to the original topic, a retry topic or another cluster. Every replayed message carries `x-middeck-replay` and related headers.
 
 ### Redis
 - Standalone / cluster / sentinel; key browsing uses `SCAN`, never `KEYS`.
@@ -56,6 +57,11 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - Queues and exchanges; create queues (classic / quorum / stream, with DLX, TTL and binding in one step).
 - Peek messages (requeue mode), publish, purge, delete.
 - Export vhost definitions.
+
+### Changesets (Kafka / RabbitMQ)
+- Describe topics, exchanges, queues and bindings in YAML. **Plan** shows the difference and **apply** runs it. Only what the file lists is touched, and deletions are opt-in.
+- Export any connection and plan against another to **promote across environments**. `envs` overrides replication, partitions and configs per environment.
+- The same binary is the CLI: `MidDeck changeset plan|apply|export`, ready for CI. See [docs/CHANGESETS.md](docs/CHANGESETS.md).
 
 ### AI assistant (⌘K / Ctrl+K)
 - One sentence finds the instance and opens the right form, prefilled: "create topic order-refund on the prod orders Kafka, 12 partitions, keep 7 days".
@@ -93,8 +99,8 @@ Download from [Releases](https://github.com/YunMuZhe/MidDeck/releases):
 
 - [x] Connection management, SSH tunnels, layered diagnostics, version compatibility
 - [x] Kafka / Redis / RabbitMQ essentials
-- [ ] **Changesets**: describe topics / queues in YAML, plan → apply, promote across environments, CLI for CI
-- [ ] **Skip & replay**: export stuck messages → move offsets → replay after the fix (tagged with replay headers)
+- [x] **Changesets**: describe topics / queues in YAML, plan → apply, promote across environments, CLI for CI
+- [x] **Skip & replay**: export stuck messages → move offsets → replay after the fix (tagged with replay headers)
 - [x] **AI assistant**: OpenAI-compatible and Anthropic APIs; locate an instance from one sentence and prefill the form (it only prefills, a human confirms)
 - [x] MCP server for Claude Code / Cursor
 - [x] Shared jump hosts

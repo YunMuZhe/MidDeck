@@ -245,6 +245,7 @@ func TestRabbitMQ(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.DeleteQueue(ctx, q)
+	defer s.DeleteExchange(ctx, q+"-x")
 	routed, err := s.Publish(ctx, rabbitmq.PublishReq{Exchange: q + "-x", RoutingKey: "order.created", Payload: `{"id":1}`, Persistent: true})
 	if err != nil || !routed {
 		t.Fatalf("publish routed=%v err=%v", routed, err)

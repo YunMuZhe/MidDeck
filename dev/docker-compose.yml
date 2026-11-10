@@ -45,6 +45,6 @@ services:
       - |
         apk add --no-cache openssh >/dev/null &&
         ssh-keygen -A >/dev/null &&
-        adduser -D -s /bin/sh ops && echo 'ops:middeck' | chpasswd &&
+        (id ops >/dev/null 2>&1 || adduser -D -s /bin/sh ops) && echo 'ops:middeck' | chpasswd &&
         sed -i 's/^#\?AllowTcpForwarding.*/AllowTcpForwarding yes/; s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config &&
         exec /usr/sbin/sshd -D -e

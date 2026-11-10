@@ -44,6 +44,7 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - Topic：列表、详情（分区 / ISR / offset / 配置）、创建、删除、扩分区、修改配置
 - 消息：按最新 / 最早 / offset / 时间点查询，按 key 和内容过滤，JSON 格式化，导出 JSONL，发送消息（含 header、指定分区）
 - 消费组：Lag 总览与分区明细、**重置 offset（先预览再执行）**、删除
+- **消息跳过与回放**：把消费组卡住的消息先保存到本地，再移动 offset 越过它们；修复后一键回放到原 topic（或重试 topic、其他集群），每条消息带上 `x-middeck-replay` 等回放标记 header
 
 ### Redis
 - 单机 / 集群 / 哨兵；基于 `SCAN` 浏览 key（不会执行 `KEYS`）
@@ -56,6 +57,11 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - 队列 / Exchange 列表，新建队列（classic / quorum / stream，死信、TTL、绑定一步完成）
 - 查看消息（requeue 模式）、发布消息、清空队列、删除队列
 - 导出 vhost definitions
+
+### 变更集（Kafka / RabbitMQ）
+- 用 YAML 描述 topic、exchange、队列、绑定，**plan 预览差异 → apply 执行**；只处理文件中列出的资源，删除需显式开启
+- 从任意连接导出现状，对另一个连接 plan，即完成 **跨环境推广**；`envs` 支持按环境覆盖副本数、分区等
+- 同一个二进制就是 CLI：`MidDeck changeset plan|apply|export`，可接入 CI，详见 [docs/CHANGESETS.md](docs/CHANGESETS.md)
 
 ### AI 助手（⌘K / Ctrl+K）
 - 一句话定位实例并打开预填好的表单，例如“在生产订单 Kafka 上建 topic order-refund，12 分区，保留 7 天”
@@ -93,8 +99,8 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 
 - [x] 连接管理、SSH 跳板、分层诊断、版本兼容性检测
 - [x] Kafka / Redis / RabbitMQ 基础运维
-- [ ] **变更集**：用 YAML 描述 topic / 队列，plan → apply，跨环境推广，CLI 可接入 CI
-- [ ] **消息跳过与回放**：导出卡住的消息 → 移动 offset → 修复后回放（附带回放标记 header）
+- [x] **变更集**：用 YAML 描述 topic / 队列，plan → apply，跨环境推广，CLI 可接入 CI
+- [x] **消息跳过与回放**：导出卡住的消息 → 移动 offset → 修复后回放（附带回放标记 header）
 - [x] **AI 助手**：支持 OpenAI 兼容协议与 Anthropic 协议，一句话定位实例并预填表单（只预填，人工确认后执行）
 - [x] MCP Server：在 Claude Code、Cursor 中直接查询中间件
 - [x] 跳板机统一维护

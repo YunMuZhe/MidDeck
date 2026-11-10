@@ -225,6 +225,7 @@ export default function App() {
           <InstanceView
             key={current.id}
             inst={current}
+            instances={instances}
             onEdit={() => openEditor(current)}
             onConnected={(on) => markConnected(current.id, on)}
             intent={intent?.args.instance_id === current.id ? intent : undefined}

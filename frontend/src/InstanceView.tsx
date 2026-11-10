@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, App, Button, Drawer, Dropdown, Result, Space, Spin, Tooltip } from 'antd'
 import {
-  ApiOutlined, DeleteOutlined, EditOutlined, LockOutlined, MedicineBoxOutlined, MoreOutlined, ReloadOutlined, RightOutlined,
+  ApiOutlined, DeleteOutlined, DiffOutlined, EditOutlined, LockOutlined, MedicineBoxOutlined, MoreOutlined, ReloadOutlined, RightOutlined,
 } from '@ant-design/icons'
 import { api, errMsg } from './api'
+import { ChangesetModal } from './Changeset'
 import { CompatBadge, DiagReport, EnvTag, isProd, KindIcon, useDangerConfirm } from './common'
 import KafkaView from './kafka/KafkaView'
 import RedisView from './redis/RedisView'
@@ -14,6 +15,7 @@ import type { ConnectResult, Instance, Intent, Report } from './types'
 
 interface Props {
   inst: Instance
+  instances: Instance[]
   onEdit: () => void
   onDeleted: () => void
   onConnected: (on: boolean) => void
@@ -21,7 +23,7 @@ interface Props {
   onIntentDone: () => void
 }
 
-export default function InstanceView({ inst, onEdit, onDeleted, onConnected, intent, onIntentDone }: Props) {
+export default function InstanceView({ inst, instances, onEdit, onDeleted, onConnected, intent, onIntentDone }: Props) {
   const { message } = App.useApp()
   const t = useT()
   const [state, setState] = useState<'connecting' | 'ok' | 'fail'>('connecting')
@@ -30,6 +32,7 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected, int
   const [error, setError] = useState('')
   const [showReport, setShowReport] = useState(false)
   const [diagnosing, setDiagnosing] = useState(false)
+  const [changeset, setChangeset] = useState(false)
   const confirm = useDangerConfirm(inst)
   const onConnectedRef = useRef(onConnected)
   onConnectedRef.current = onConnected
@@ -94,6 +97,11 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected, int
           {state === 'ok' && <CompatBadge c={compat} />}
           <div style={{ flex: 1 }} />
           <Space className="no-drag">
+            {state === 'ok' && inst.kind !== 'redis' && (
+              <Tooltip title={t('Describe topology as YAML, plan and apply it')}>
+                <Button icon={<DiffOutlined />} onClick={() => setChangeset(true)}>{t('Changeset')}</Button>
+              </Tooltip>
+            )}
             <Button icon={<MedicineBoxOutlined />} onClick={() => (report ? setShowReport(true) : diagnose())}>{t('Diagnostics')}</Button>
             <Button icon={<ReloadOutlined />} onClick={() => connect(true)}>{t('Reconnect')}</Button>
             <Button icon={<EditOutlined />} onClick={onEdit}>{t('Edit')}</Button>
@@ -157,11 +165,12 @@ export default function InstanceView({ inst, onEdit, onDeleted, onConnected, int
             }
           />
         )}
-        {state === 'ok' && inst.kind === 'kafka' && <KafkaView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
+        {state === 'ok' && inst.kind === 'kafka' && <KafkaView inst={inst} instances={instances} intent={intent} onIntentDone={onIntentDone} />}
         {state === 'ok' && inst.kind === 'redis' && <RedisView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
         {state === 'ok' && inst.kind === 'rabbitmq' && <RabbitView inst={inst} intent={intent} onIntentDone={onIntentDone} />}
       </div>
 
+      {inst.kind !== 'redis' && <ChangesetModal inst={inst} instances={instances} open={changeset} onClose={() => setChangeset(false)} />}
       <Drawer
         title={t('Connection diagnostics')}
         width={620}

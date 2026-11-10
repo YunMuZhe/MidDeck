@@ -87,6 +87,9 @@ func Open(ctx context.Context, inst config.Instance, rawDial driver.DialFunc, re
 		kgo.RequestTimeoutOverhead(10 * time.Second),
 		kgo.RetryTimeout(15 * time.Second),
 		kgo.ClientID("middeck"),
+		// kgo caches admin metadata for MetadataMinAge (5s by default), which makes a
+		// topic created a moment ago look missing. An admin UI wants fresh answers.
+		kgo.MetadataMinAge(500 * time.Millisecond),
 	}
 	mech, err := saslMechanism(inst.Auth)
 	if err != nil {
@@ -263,6 +266,10 @@ func (s *Session) ListTopics(ctx context.Context) ([]Topic, error) {
 	}
 	out := make([]Topic, 0, len(td))
 	for _, t := range td {
+		// A cached answer to an earlier lookup of a missing topic can show up here.
+		if t.Err != nil && strings.Contains(t.Err.Error(), "UNKNOWN_TOPIC_OR_PARTITION") {
+			continue
+		}
 		x := Topic{Name: t.Topic, Partitions: len(t.Partitions), Internal: t.IsInternal}
 		if t.Err != nil {
 			x.Error = t.Err.Error()
@@ -336,14 +343,20 @@ func (s *Session) CreateTopic(ctx context.Context, r CreateTopicReq) error {
 		cfg[k] = &v
 	}
 	resp, err := s.adm.CreateTopic(ctx, r.Partitions, r.Replication, cfg, r.Name)
+	s.forget(r.Name)
 	if err != nil {
 		return err
 	}
 	return resp.Err
 }
 
+// forget drops cached metadata for topics we just changed, so the next lookup
+// sees the change instead of an answer from before it.
+func (s *Session) forget(topics ...string) { s.cl.PurgeTopicsFromClient(topics...) }
+
 func (s *Session) DeleteTopic(ctx context.Context, name string) error {
 	resp, err := s.adm.DeleteTopics(ctx, name)
+	s.forget(name)
 	if err != nil {
 		return err
 	}
@@ -353,6 +366,7 @@ func (s *Session) DeleteTopic(ctx context.Context, name string) error {
 // SetPartitions grows the topic to total partitions.
 func (s *Session) SetPartitions(ctx context.Context, name string, total int) error {
 	resp, err := s.adm.UpdatePartitions(ctx, total, name)
+	s.forget(name)
 	if err != nil {
 		return err
 	}

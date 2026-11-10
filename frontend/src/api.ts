@@ -3,7 +3,10 @@
 import type {
   AIAction, AISettings, AuditEntry, Bastion, BastionView, Binding, ConnectResult, Exchange, FetchReq, GroupDetail, GroupSummary, ImportResult, Instance,
   KeyValue, Matrix, Message, OffsetChange, PeekedMessage, Queue, Report, ScanResult, SlowLog, Topic, TopicDetail,
+  ChangeResult, ParkedBatch, Plan, Replay, SkipPreview, TextFile,
 } from './types'
+
+export interface SkipReq { group: string; topic: string; counts: Record<number, number> }
 
 declare global {
   interface Window {
@@ -57,6 +60,20 @@ export const api = {
     call<OffsetChange[] | null>('KafkaResetOffsets', id, r).then((x) => x ?? []),
   kafkaDeleteGroup: (id: string, g: string) => call<void>('KafkaDeleteGroup', id, g),
   exportMessages: (name: string, msgs: unknown[]) => call<string>('ExportMessages', name, msgs),
+  kafkaSkipPreview: (id: string, r: SkipReq) => call<SkipPreview>('KafkaSkipPreview', id, r),
+  kafkaSkip: (id: string, r: SkipReq, reason: string, move: boolean) => call<ParkedBatch>('KafkaSkip', id, r, reason, move),
+  parkedBatches: (instanceId: string) => call<ParkedBatch[] | null>('ParkedBatches', instanceId).then((x) => x ?? []),
+  parkedMessages: (batchId: string, limit: number) => call<Message[] | null>('ParkedMessages', batchId, limit).then((x) => x ?? []),
+  kafkaReplay: (r: { batchId: string; instanceId: string; topic: string; keepPartitions: boolean; force: boolean }) => call<Replay>('KafkaReplay', r),
+  deleteParked: (batchId: string) => call<void>('DeleteParked', batchId),
+  exportParked: (batchId: string) => call<string>('ExportParked', batchId),
+
+  changesetPlan: (id: string, text: string, env: string) => call<Plan>('ChangesetPlan', id, text, env),
+  changesetApply: (id: string, text: string, env: string, fingerprint: string, allowDelete: boolean) =>
+    call<ChangeResult[] | null>('ChangesetApply', id, text, env, fingerprint, allowDelete).then((x) => x ?? []),
+  changesetExport: (id: string) => call<string>('ChangesetExport', id),
+  changesetOpenFile: () => call<TextFile>('ChangesetOpenFile'),
+  changesetSaveFile: (path: string, name: string, content: string) => call<string>('ChangesetSaveFile', path, name, content),
 
   redisOverview: (id: string) => call<Record<string, string>>('RedisOverview', id),
   redisScan: (id: string, pattern: string, cursor: number, count: number) => call<ScanResult>('RedisScan', id, pattern, cursor, count),

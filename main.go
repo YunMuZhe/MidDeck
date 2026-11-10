@@ -15,8 +15,13 @@ import (
 var assets embed.FS
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		os.Exit(runMCP())
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "mcp":
+			os.Exit(runMCP())
+		case "changeset", "cs":
+			os.Exit(runChangeset(os.Args[2:], os.Stdout, os.Stderr))
+		}
 	}
 	app := NewApp()
 	err := wails.Run(&options.App{

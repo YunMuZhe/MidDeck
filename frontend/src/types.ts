@@ -134,3 +134,19 @@ export type ActionArgs = Record<string, any>
 export interface AIAction { action: string; args: ActionArgs | null; text?: string }
 /** A proposed action handed to a view to prefill; seq changes for every new proposal. */
 export interface Intent { seq: number; action: string; args: ActionArgs }
+
+// Changesets
+export interface Diff { field: string; from: string; to: string }
+export interface Change { resource: string; name: string; action: 'create' | 'update' | 'delete' | 'conflict'; diffs: Diff[] | null; notes: string[] | null }
+export interface Plan { kind: string; env: string; changes: Change[]; unchanged: number; warnings: string[]; fingerprint: string }
+export interface ChangeResult extends Change { status: 'applied' | 'failed' | 'skipped'; error?: string }
+export interface TextFile { path: string; name: string; content: string }
+
+// Skip & replay
+export interface OffsetRange { partition: number; from: number; to: number }
+export interface SkipPreview { ranges: OffsetRange[]; messages: Message[]; total: number; state: string }
+export interface Replay { at: string; instanceId: string; instanceName: string; topic: string; keepPartitions: boolean; count: number; error?: string }
+export interface ParkedBatch {
+  id: string; instanceId: string; instanceName: string; group: string; topic: string; reason?: string; createdAt: string
+  count: number; bytes: number; ranges: OffsetRange[]; skipped: boolean; replays: Replay[]; dir: string
+}
