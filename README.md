@@ -26,6 +26,8 @@ Kafka · Redis · RabbitMQ —— 穿透堡垒机、可视化运维、AI 辅助�
 
 MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做成可视化界面，并且**认真解决了"连不上"的问题**。
 
+![MidDeck 首页：按项目和环境组织的连接总览](docs/assets/screenshots/zh/home.png)
+
 ## 功能
 
 ### 连接与网络
@@ -34,6 +36,11 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - **Kafka 内网地址自动可达**：broker 通告的 `advertised.listeners` 是内网地址也能用；还支持地址映射
 - **分层连接诊断**：SSH → TCP → TLS → 认证 → broker 可达性 → 版本 → 权限，逐层告诉你哪一步出问题、怎么修
 - **版本兼容性检测**：连接后自动识别服务端版本，不兼容或功能受限时给出提示（[支持矩阵](docs/COMPATIBILITY.md)）
+
+<p>
+  <img src="docs/assets/screenshots/zh/ssh-bastion.png" width="49%" alt="连接经 SSH 跳板机访问内网 Kafka" />
+  <img src="docs/assets/screenshots/zh/diagnose.png" width="49%" alt="分层连接诊断：SSH、TCP、元数据、版本、权限逐项检查" />
+</p>
 
 ### 配置管理
 - 按 **项目 → 环境 → 实例** 组织，支持别名、标签、模糊搜索
@@ -47,6 +54,11 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - 消费组：Lag 总览与分区明细、**重置 offset（先预览再执行）**、删除
 - **消息跳过与回放**：把消费组卡住的消息先保存到本地，再移动 offset 越过它们；修复后一键回放到原 topic（或重试 topic、其他集群），每条消息带上 `x-middeck-replay` 等回放标记 header
 
+<p>
+  <img src="docs/assets/screenshots/zh/kafka-messages.png" width="49%" alt="Kafka 消息查询，Avro 消息自动解码为 JSON" />
+  <img src="docs/assets/screenshots/zh/kafka-groups.png" width="49%" alt="Kafka 消费组与 Lag 总览" />
+</p>
+
 ### Redis
 - 单机 / 集群 / 哨兵；基于 `SCAN` 浏览 key（不会执行 `KEYS`）
 - string / hash / list / set / zset / stream 查看，string 编辑，TTL 管理，批量删除
@@ -54,15 +66,21 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 - INFO 概览、慢日志；检测被禁用或改名的命令（`rename-command`）
 - 识别 Valkey / Dragonfly / KeyDB 等兼容实现
 
+![Redis key 浏览与 hash 查看](docs/assets/screenshots/zh/redis.png)
+
 ### RabbitMQ
 - 队列 / Exchange 列表，新建队列（classic / quorum / stream，死信、TTL、绑定一步完成）
 - 查看消息（requeue 模式）、发布消息、清空队列、删除队列
 - 导出 vhost definitions
 
+![RabbitMQ 队列列表，标出有消息但没有消费者的队列](docs/assets/screenshots/zh/rabbitmq.png)
+
 ### 变更集（Kafka / RabbitMQ）
 - 用 YAML 描述 topic、exchange、队列、绑定，**plan 预览差异 → apply 执行**；只处理文件中列出的资源，删除需显式开启
 - 从任意连接导出现状，对另一个连接 plan，即完成 **跨环境推广**；`envs` 支持按环境覆盖副本数、分区等
 - 同一个二进制就是 CLI：`MidDeck changeset plan|apply|export`，可接入 CI，详见 [docs/CHANGESETS.md](docs/CHANGESETS.md)
+
+![变更集：左边写 YAML，右边 Plan 预览将要发生的变更](docs/assets/screenshots/zh/changeset.png)
 
 ### AI 助手（⌘K / Ctrl+K）
 - 一句话定位实例并打开预填好的表单，例如“在生产订单 Kafka 上建 topic order-refund，12 分区，保留 7 天”
@@ -90,6 +108,8 @@ MidDeck 是一个跨平台桌面客户端，把常用中间件的日常操作做
 ### 巡检告警
 - 本地监控 **Kafka 消费积压**、**RabbitMQ 死信队列增长**、**Redis 大 key**，超过阈值弹系统通知，恢复时再通知
 - 只读检查；Redis 按批采样 `MEMORY USAGE`，不阻塞服务。详见 [docs/ALERTS.md](docs/ALERTS.md)
+
+![巡检告警规则：消费积压、死信队列、Redis 大 key](docs/assets/screenshots/zh/alerts.png)
 
 ### 界面
 - 中文 / English 切换（默认英文），浅色 / 深色 / 跟随系统

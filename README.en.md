@@ -26,6 +26,8 @@ Kafka · Redis · RabbitMQ — through bastion hosts, with a real GUI and an AI 
 
 MidDeck is a cross-platform desktop client for everyday middleware operations, and it takes **"I can't connect"** seriously.
 
+![MidDeck home: connections organised by project and environment](docs/assets/screenshots/en/home.png)
+
 ## Features
 
 ### Connectivity
@@ -34,6 +36,11 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - **Kafka behind NAT just works**: brokers advertising internal addresses are reachable through the tunnel; address rewriting is available too.
 - **Layered diagnostics**: SSH → TCP → TLS → auth → broker reachability → version → permissions, with a concrete hint for each failure.
 - **Version compatibility check**: server version is detected on connect, with warnings for unsupported versions or unavailable features ([matrix](docs/COMPATIBILITY.md)).
+
+<p>
+  <img src="docs/assets/screenshots/en/ssh-bastion.png" width="49%" alt="A connection reached through an SSH jump host" />
+  <img src="docs/assets/screenshots/en/diagnose.png" width="49%" alt="Layered diagnostics: SSH, TCP, metadata, version and permissions" />
+</p>
 
 ### Configuration
 - Organize by **project → environment → instance**, with aliases, tags and fuzzy search.
@@ -47,6 +54,11 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - Consumer groups: lag overview and per-partition detail, **offset reset with a dry-run preview**, delete.
 - **Skip & replay**: save the messages a group is stuck on, move its offsets past them, and replay them after the fix, to the original topic, a retry topic or another cluster. Every replayed message carries `x-middeck-replay` and related headers.
 
+<p>
+  <img src="docs/assets/screenshots/en/kafka-messages.png" width="49%" alt="Kafka messages, Avro decoded to JSON" />
+  <img src="docs/assets/screenshots/en/kafka-groups.png" width="49%" alt="Kafka consumer groups and lag" />
+</p>
+
 ### Redis
 - Standalone / cluster / sentinel; key browsing uses `SCAN`, never `KEYS`.
 - View string / hash / list / set / zset / stream, edit strings, manage TTL, bulk delete.
@@ -54,15 +66,21 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 - INFO overview and slow log; detects commands disabled through `rename-command`.
 - Detects Valkey / Dragonfly / KeyDB.
 
+![Browsing Redis keys and a hash](docs/assets/screenshots/en/redis.png)
+
 ### RabbitMQ
 - Queues and exchanges; create queues (classic / quorum / stream, with DLX, TTL and binding in one step).
 - Peek messages (requeue mode), publish, purge, delete.
 - Export vhost definitions.
 
+![RabbitMQ queues, flagging queues with messages but no consumers](docs/assets/screenshots/en/rabbitmq.png)
+
 ### Changesets (Kafka / RabbitMQ)
 - Describe topics, exchanges, queues and bindings in YAML. **Plan** shows the difference and **apply** runs it. Only what the file lists is touched, and deletions are opt-in.
 - Export any connection and plan against another to **promote across environments**. `envs` overrides replication, partitions and configs per environment.
 - The same binary is the CLI: `MidDeck changeset plan|apply|export`, ready for CI. See [docs/CHANGESETS.md](docs/CHANGESETS.md).
+
+![Changeset: YAML on the left, the plan on the right](docs/assets/screenshots/en/changeset.png)
 
 ### AI assistant (⌘K / Ctrl+K)
 - One sentence finds the instance and opens the right form, prefilled: "create topic order-refund on the prod orders Kafka, 12 partitions, keep 7 days".
@@ -90,6 +108,8 @@ MidDeck is a cross-platform desktop client for everyday middleware operations, a
 ### Patrol alerts
 - Watch **Kafka consumer lag**, **RabbitMQ dead-letter queue growth** and **big Redis keys** locally; get a system notification over the threshold and again on recovery.
 - Checks only read; Redis is sampled in batches with `MEMORY USAGE`. See [docs/ALERTS.md](docs/ALERTS.md).
+
+![Alert rules for consumer lag, dead-letter queues and Redis big keys](docs/assets/screenshots/en/alerts.png)
 
 ### Interface
 - English / Chinese (English by default); light, dark or follow-system theme
