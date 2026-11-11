@@ -187,6 +187,8 @@ var messages = map[string][2]string{
 	"ai.rateLimited":        {"rate limited by the provider, try again shortly", "触发了服务商的限流，请稍后再试"},
 	"ai.apiError":           {"the provider returned an error", "服务商返回错误"},
 	"ai.unreachable":        {"cannot reach the AI provider", "无法连接 AI 服务"},
+	"ai.viaProxy":           {"via proxy %s", "经由代理 %s"},
+	"ai.direct":             {"direct connection, no proxy applies; if your browser uses a proxy, enter it in the Proxy field", "直连，没有可用的代理；如果浏览器走了代理，请把它填到“代理”一栏"},
 	"ai.refused":            {"the model declined this request", "模型拒绝了这个请求"},
 	"ai.badOutput":          {"could not read the model's answer", "无法解析模型的回复"},
 	"ai.testOK":             {"connected, the model answered with %s in %d ms", "连接成功，模型以 %s 作答，耗时 %d ms"},

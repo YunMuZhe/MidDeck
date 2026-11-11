@@ -222,14 +222,32 @@ func validate(a Action, wc Context) error {
 
 func httpClient(proxy string) (*http.Client, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	if proxy != "" {
+	var configured *url.URL
+	if proxy = strings.TrimSpace(proxy); proxy != "" {
 		u, err := url.Parse(proxy)
 		if err != nil || u.Host == "" {
 			return nil, fmt.Errorf("%s: %q", i18n.T("ai.badProxy"), proxy)
 		}
-		tr.Proxy = http.ProxyURL(u)
+		configured = u
 	}
-	return &http.Client{Transport: tr, Timeout: 120 * time.Second}, nil
+	tr.Proxy = proxyRoute(configured)
+	return &http.Client{Transport: routeErrors{tr}, Timeout: 120 * time.Second}, nil
+}
+
+// routeErrors says in a failed request's error whether it went through a proxy,
+// so "the browser can reach it but MidDeck cannot" is easy to diagnose.
+type routeErrors struct{ tr *http.Transport }
+
+func (r routeErrors) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := r.tr.RoundTrip(req)
+	if err != nil {
+		if p, _ := r.tr.Proxy(req); p != nil {
+			err = fmt.Errorf("%w (%s)", err, i18n.T("ai.viaProxy", p.Redacted()))
+		} else {
+			err = fmt.Errorf("%w (%s)", err, i18n.T("ai.direct"))
+		}
+	}
+	return res, err
 }
 
 var effortModels = regexp.MustCompile(`^claude-(opus|sonnet|haiku|fable|mythos)-(5|4-[6-9])`)

@@ -330,6 +330,7 @@ export const zh: Record<string, string> = {
   'Model': '模型',
   'Optional for local models': '本地模型可不填',
   'Proxy (optional)': '代理（可选）',
+  'Leave empty to use HTTPS_PROXY or the system proxy, like the browser': '留空时和浏览器一样，使用 HTTPS_PROXY 环境变量或系统代理',
   'Also send instance addresses to the model': '同时把实例地址发给模型',
   'The model sees connection names, projects, environments, tags, aliases and descriptions — never passwords. It only fills in forms; nothing runs until you confirm.': '模型只能看到连接名称、项目、环境、标签、别名和描述，看不到密码。它只负责预填表单，你确认之前什么都不会执行。',
   'Describe what you want to do…': '用一句话描述你想做什么……',

@@ -94,7 +94,7 @@ export function AISettingsModal({ open, onClose }: { open: boolean; onClose: () 
         <Form.Item name="apiKey" label="API Key" tooltip={t('Stored in the system keychain')}>
           <Input.Password autoComplete="new-password" placeholder={hasKey ? t('Saved — leave empty to keep') : provider === 'openai' ? t('Optional for local models') : ''} />
         </Form.Item>
-        <Form.Item name="proxy" label={t('Proxy (optional)')}>
+        <Form.Item name="proxy" label={t('Proxy (optional)')} extra={t('Leave empty to use HTTPS_PROXY or the system proxy, like the browser')}>
           <Input placeholder="http://127.0.0.1:7890  /  socks5://127.0.0.1:1080" />
         </Form.Item>
         <Form.Item name="sendAddresses" valuePropName="checked" style={{ marginBottom: 8 }}>
